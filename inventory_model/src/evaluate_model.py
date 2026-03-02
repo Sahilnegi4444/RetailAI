@@ -17,7 +17,7 @@ from features import create_features
 # =========================
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODEL_DIR = BASE_DIR / "models"
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = BASE_DIR / "data" / "Datatype_01_Primary"
 
 print("\n" + "="*70)
 print("🔍 COMPREHENSIVE MODEL EVALUATION")

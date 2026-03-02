@@ -1,10 +1,13 @@
 import "./StatsCard.css";
 
-const StatsCard = ({ title, value, icon, trend, trendUp }) => {
+const StatsCard = ({ title, value, icon, trend, trendUp, tooltip }) => {
   return (
-    <div className="stats-card">
+    <div className="stats-card" title={tooltip}>
       <div className="stats-header">
-        <span className="stats-title">{title}</span>
+        <span className="stats-title">
+          {title}
+          {tooltip && <span className="help-tooltip">ℹ️</span>}
+        </span>
         <span className="stats-icon">{icon}</span>
       </div>
       <div className="stats-value">{value}</div>

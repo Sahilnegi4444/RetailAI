@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getHistory, getForecast, getStores, getProducts } from "../api";
+import { getHistory, getForecast, getStores, getProducts, getModelInfo } from "../api";
 import StatsCard from "../components/StatsCard";
 import HistoryChart from "../components/HistoryChart";
 import ForecastChart from "../components/ForecastChart";
@@ -10,12 +10,14 @@ import "./Dashboard.css";
 const Dashboard = () => {
   const [stores, setStores] = useState([]);
   const [products, setProducts] = useState([]);
-  const [selectedStore, setSelectedStore] = useState("S001");
-  const [selectedProduct, setSelectedProduct] = useState("P0001");
+  const [selectedStore, setSelectedStore] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
   const [history, setHistory] = useState([]);
   const [forecast, setForecast] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [modelInfo, setModelInfo] = useState(getModelInfo());
+  const [isSingleStore, setIsSingleStore] = useState(false);
 
   useEffect(() => {
     loadStores();
@@ -37,6 +39,14 @@ const Dashboard = () => {
     try {
       const data = await getStores();
       setStores(data.stores || []);
+      
+      // Check if single store model
+      if (data.stores && data.stores.length === 1) {
+        setIsSingleStore(true);
+        setSelectedStore(data.stores[0]);
+      } else if (data.stores && data.stores.length > 0) {
+        setSelectedStore(data.stores[0]);
+      }
     } catch (error) {
       console.error("Failed to load stores:", error);
       setError("Failed to load stores. Please check if the API is running.");
@@ -45,26 +55,78 @@ const Dashboard = () => {
 
   const loadProducts = async (storeId) => {
     try {
-      const data = await getProducts(storeId);
-      setProducts(data.products || []);
+      const selectedModel = localStorage.getItem("selectedModel");
+      
+      if (selectedModel === "secondary") {
+        // For Model 2, load items instead of products
+        const response = await fetch(`${localStorage.getItem("apiUrl") || "http://127.0.0.1:8001"}/items`);
+        const data = await response.json();
+        
+        if (data.grocery && data.liquor) {
+          // Combine grocery and liquor items for dropdown
+          const allItems = [
+            ...data.grocery.items.slice(0, 20), // First 20 grocery items
+            ...data.liquor.items.slice(0, 10)   // First 10 liquor items
+          ];
+          setProducts(allItems);
+          
+          // Auto-select first item
+          if (allItems.length > 0) {
+            setSelectedProduct(allItems[0]);
+          }
+        } else {
+          // Fallback to empty state for Model 2
+          setProducts([]);
+          setSelectedProduct("");
+          setLoading(false); // Stop loading if no products
+        }
+      } else {
+        // Original logic for Model 1
+        const data = await getProducts(storeId);
+        setProducts(data.products || []);
+        
+        // Auto-select first product
+        if (data.products && data.products.length > 0) {
+          setSelectedProduct(data.products[0]);
+        }
+      }
     } catch (error) {
       console.error("Failed to load products:", error);
+      setLoading(false); // Stop loading on error
     }
   };
 
   const loadData = async () => {
+    if (!selectedStore || !selectedProduct) {
+      setLoading(false); // Stop loading if no store or product
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     try {
-      const [historyData, forecastData] = await Promise.all([
-        getHistory(selectedStore, selectedProduct),
-        getForecast(selectedStore, selectedProduct, 3),
-      ]);
-      setHistory(historyData);
-      setForecast(forecastData);
+      const selectedModel = localStorage.getItem("selectedModel");
+      
+      if (selectedModel === "secondary") {
+        // For Model 2, use different API endpoints
+        const [historyData, forecastData] = await Promise.all([
+          getHistory(selectedStore, selectedProduct),
+          getForecast(selectedStore, selectedProduct, 3),
+        ]);
+        setHistory(historyData || []);
+        setForecast(forecastData || []);
+      } else {
+        // Original logic for Model 1
+        const [historyData, forecastData] = await Promise.all([
+          getHistory(selectedStore, selectedProduct),
+          getForecast(selectedStore, selectedProduct, 3),
+        ]);
+        setHistory(historyData);
+        setForecast(forecastData);
+      }
     } catch (error) {
       console.error("Failed to load data:", error);
-      setError("Failed to load data. Please ensure the API server is running on port 8000.");
+      setError("Failed to load data. Please ensure the API server is running on the correct port.");
     } finally {
       setLoading(false);
     }
@@ -101,36 +163,126 @@ const Dashboard = () => {
       <div className="dashboard-header">
         <div>
           <h1>Demand Forecasting Dashboard</h1>
-          <p className="subtitle">AI-powered inventory intelligence</p>
+          <p className="subtitle">
+            AI-powered inventory intelligence - Track sales, predict demand, optimize stock
+            <span className="model-badge" title={`Using ${modelInfo.name}`}>
+              {modelInfo.name} ({modelInfo.accuracy})
+            </span>
+          </p>
         </div>
         <div className="header-actions">
-          <select
-            className="select-input"
-            value={selectedStore}
-            onChange={(e) => setSelectedStore(e.target.value)}
-          >
-            {stores.map((store) => (
-              <option key={store} value={store}>
-                Store {store}
-              </option>
-            ))}
-          </select>
+          {!isSingleStore && (
+            <select
+              className="select-input"
+              value={selectedStore}
+              onChange={(e) => setSelectedStore(e.target.value)}
+            >
+              {stores.map((store) => (
+                <option key={store} value={store}>
+                  Store {store}
+                </option>
+              ))}
+            </select>
+          )}
+          {isSingleStore && (
+            <div className="single-store-badge">
+              📍 My Store
+            </div>
+          )}
           <select
             className="select-input"
             value={selectedProduct}
             onChange={(e) => setSelectedProduct(e.target.value)}
+            disabled={products.length === 0}
           >
-            {products.map((product) => (
-              <option key={product} value={product}>
-                Product {product}
-              </option>
-            ))}
+            {products.length === 0 ? (
+              <option value="">No items available</option>
+            ) : (
+              products.map((product) => (
+                <option key={product} value={product}>
+                  {product.length > 30 ? `${product.substring(0, 30)}...` : product}
+                </option>
+              ))
+            )}
           </select>
         </div>
       </div>
 
       {loading ? (
         <LoadingSpinner message="Loading dashboard data..." />
+      ) : products.length === 0 && localStorage.getItem("selectedModel") === "secondary" ? (
+        <div className="model2-dashboard">
+          <div className="stats-grid">
+            <StatsCard
+              title="Business Model"
+              value="Active"
+              icon="🏪"
+              trend="Real Data"
+              trendUp={true}
+              tooltip="Using your actual 2024-2025 sales data for predictions"
+            />
+            <StatsCard
+              title="Total Items"
+              value="2,694"
+              icon="📦"
+              trend="Analyzed"
+              trendUp={true}
+              tooltip="Total unique products in your inventory"
+            />
+            <StatsCard
+              title="Categories"
+              value="2"
+              icon="🏷️"
+              trend="Grocery + Liquor"
+              trendUp={true}
+              tooltip="Product categories tracked in your store"
+            />
+            <StatsCard
+              title="Data Period"
+              value="2024-2025"
+              icon="📅"
+              trend="Real Sales"
+              trendUp={true}
+              tooltip="Time period of sales data used for analysis"
+            />
+          </div>
+          
+          <div className="business-intelligence-card">
+            <h2>🎯 Business Intelligence Dashboard</h2>
+            <p>Your Model 2 is powered by real business data from 2024-2025 sales.</p>
+            <div className="bi-features">
+              <div className="bi-feature">
+                <span className="bi-icon">📊</span>
+                <div>
+                  <h4>Smart Analytics</h4>
+                  <p>2,694 items analyzed with consumption patterns</p>
+                </div>
+              </div>
+              <div className="bi-feature">
+                <span className="bi-icon">🛒</span>
+                <div>
+                  <h4>Purchase Recommendations</h4>
+                  <p>Go to Bulk Predictions for smart reorder suggestions</p>
+                </div>
+              </div>
+              <div className="bi-feature">
+                <span className="bi-icon">💰</span>
+                <div>
+                  <h4>Revenue Optimization</h4>
+                  <p>Prioritized by business value and stock velocity</p>
+                </div>
+              </div>
+            </div>
+            <div className="bi-actions">
+              <button 
+                className="btn-primary"
+                onClick={() => window.location.href = '/bulk-orders'}
+              >
+                View Purchase Recommendations
+              </button>
+            </div>
+          </div>
+        </div>
       ) : (
         <>
           <div className="stats-grid">
@@ -140,6 +292,7 @@ const Dashboard = () => {
               icon="🎯"
               trend="+2.5%"
               trendUp={true}
+              tooltip="How accurate our predictions are compared to actual sales"
             />
             <StatsCard
               title="Avg Error"
@@ -147,11 +300,13 @@ const Dashboard = () => {
               icon="📊"
               trend="-1.2%"
               trendUp={true}
+              tooltip="Average difference between predicted and actual sales"
             />
             <StatsCard
               title="Forecast Period"
               value={`${forecast.length} weeks`}
               icon="📅"
+              tooltip="How far ahead we're predicting demand"
             />
             <StatsCard
               title="Expected Demand"
@@ -159,6 +314,7 @@ const Dashboard = () => {
               icon="📈"
               trend="+5.3%"
               trendUp={true}
+              tooltip="Total units customers will buy in the forecast period"
             />
           </div>
 

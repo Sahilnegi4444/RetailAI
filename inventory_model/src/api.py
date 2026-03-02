@@ -15,7 +15,7 @@ from features import create_features
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODEL_DIR = BASE_DIR / "models"
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = BASE_DIR / "data" / "Datatype_01_Primary"
 
 # =========================================================
 # 🤖 LOAD MODEL & ENCODERS (YOUR TRAINED MODEL)
@@ -37,7 +37,7 @@ app = FastAPI(
 # =========================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -115,6 +115,19 @@ def prepare_single_row(df: pd.DataFrame) -> pd.DataFrame:
     df['is_weekend'] = df['date'].dt.weekday.isin([5, 6]).astype(int)
 
     return df
+
+# =========================================================
+# 🏥 HEALTH CHECK
+# =========================================================
+@app.get("/")
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "Retail Demand Forecasting API",
+        "version": "1.0",
+        "model_loaded": model is not None,
+        "encoders_loaded": encoders is not None
+    }
 
 # =========================================================
 # 1️⃣ BASIC PREDICTION
@@ -336,7 +349,7 @@ def history(store_id: str, product_id: str):
 
     df = pd.read_csv(DATA_DIR / "retail_store_inventory.csv")
     df.columns = df.columns.str.lower().str.replace(" ", "_").str.replace("/", "_")
-    df['date'] = pd.to_datetime(df['date'])
+    df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
 
     df = df[
         (df['store_id'] == store_id) &
@@ -372,7 +385,7 @@ def forecast(data: ForecastInput):
 
     df = pd.read_csv(DATA_DIR / "retail_store_inventory.csv")
     df.columns = df.columns.str.lower().str.replace(" ", "_").str.replace("/", "_")
-    df['date'] = pd.to_datetime(df['date'])
+    df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
 
     df = df[
         (df['store_id'] == data.store_id) &
@@ -448,7 +461,7 @@ def bulk_predict(data: dict):
         # Load data
         df = pd.read_csv(DATA_DIR / "retail_store_inventory.csv")
         df.columns = df.columns.str.lower().str.replace(" ", "_").str.replace("/", "_")
-        df['date'] = pd.to_datetime(df['date'])
+        df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
         
         print(f"Loaded {len(df)} records from CSV")
         
@@ -672,7 +685,7 @@ async def upload_data(file: UploadFile = File(...)):
             return {"error": f"Missing required columns: {', '.join(missing_cols)}"}
         
         # Convert date
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
         
         # Get store IDs
         stores = df['store_id'].unique()
@@ -729,7 +742,7 @@ def train_model(data: dict):
         # Load data
         df = pd.read_csv(DATA_DIR / "retail_store_inventory.csv")
         df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_").str.replace("/", "_")
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
         
         # Clean data
         df = df[df['units_sold'] >= 0]

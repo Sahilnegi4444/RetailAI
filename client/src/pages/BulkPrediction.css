@@ -521,3 +521,117 @@
     grid-template-columns: 1fr;
   }
 }
+
+.single-store-display {
+  background: #2196F3;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+}
+/* Date Picker Enhancements */
+.date-picker-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.date-shortcuts {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-date-shortcut {
+  padding: 0.375rem 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-date-shortcut:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.btn-date-shortcut:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 768px) {
+  .date-shortcuts {
+    justify-content: center;
+  }
+  
+  .btn-date-shortcut {
+    flex: 1;
+    min-width: 80px;
+  }
+}
+
+/* Help Banner */
+.help-banner {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.help-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+/* Help Tooltips */
+.help-tooltip {
+  display: inline-block;
+  margin-left: 0.5rem;
+  cursor: help;
+  font-size: 0.875rem;
+  color: var(--primary);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.help-tooltip:hover {
+  opacity: 1;
+}
+
+.summary-label .help-tooltip {
+  font-size: 0.75rem;
+  margin-left: 0.25rem;
+}
+
+th .help-tooltip {
+  font-size: 0.75rem;
+  margin-left: 0.25rem;
+  font-weight: normal;
+}
+
+/* Section Notes */
+.section-note {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.section-note strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}

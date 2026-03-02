@@ -24,6 +24,28 @@
 .subtitle {
   color: var(--text-muted);
   font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.model-badge {
+  background: #4CAF50;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.single-store-badge {
+  background: #2196F3;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .header-actions {
@@ -176,4 +198,90 @@
   .stats-grid {
     grid-template-columns: 1fr;
   }
+}
+/* Business Intelligence Dashboard Styles */
+.model2-dashboard {
+  padding: 20px 0;
+}
+
+.business-intelligence-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 30px;
+  border-radius: 12px;
+  margin-top: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.business-intelligence-card h2 {
+  margin: 0 0 15px 0;
+  font-size: 1.8rem;
+}
+
+.business-intelligence-card p {
+  margin: 0 0 25px 0;
+  opacity: 0.9;
+  font-size: 1.1rem;
+}
+
+.bi-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 25px;
+}
+
+.bi-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+}
+
+.bi-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.bi-feature h4 {
+  margin: 0 0 8px 0;
+  font-size: 1.1rem;
+}
+
+.bi-feature p {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.bi-actions {
+  text-align: center;
+}
+
+.bi-actions .btn-primary {
+  background: white;
+  color: #667eea;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.bi-actions .btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.single-store-badge {
+  background: #10b981;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.9rem;
 }

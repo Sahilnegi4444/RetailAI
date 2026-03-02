@@ -52,3 +52,18 @@
 .trend-down {
   color: var(--danger);
 }
+
+/* Tooltip for stats cards */
+.stats-card {
+  cursor: help;
+}
+
+.stats-title .help-tooltip {
+  font-size: 0.75rem;
+  margin-left: 0.25rem;
+  opacity: 0.6;
+}
+
+.stats-card:hover .help-tooltip {
+  opacity: 1;
+}

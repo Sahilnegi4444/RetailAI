@@ -15,7 +15,7 @@ from metrics import calculate_all_metrics, print_metrics, compare_metrics
 # =========================
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODEL_DIR = BASE_DIR / "models"
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = BASE_DIR / "data" / "Datatype_01_Primary"
 
 df = pd.read_csv(DATA_DIR / "retail_store_inventory.csv")
 

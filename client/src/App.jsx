@@ -4,6 +4,7 @@ import Forecast from "./pages/Forecast";
 import Prediction from "./pages/Prediction";
 import BulkPrediction from "./pages/BulkPrediction";
 import DataUpload from "./pages/DataUpload";
+import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
 import "./App.css";
 
@@ -31,12 +32,7 @@ function App() {
             <p style={{ color: "var(--text-muted)" }}>Coming soon...</p>
           </div>
         )}
-        {activeView === "settings" && (
-          <div style={{ padding: "2rem" }}>
-            <h1>Settings</h1>
-            <p style={{ color: "var(--text-muted)" }}>Coming soon...</p>
-          </div>
-        )}
+        {activeView === "settings" && <Settings />}
       </main>
     </div>
   );
