@@ -67,9 +67,9 @@ def main():
         print(f"   🚨 Critical Stock: {summary.get('critical_stock', 'N/A')}")
         print(f"   💰 Order Value: ₹{summary.get('total_order_value', 'N/A')}")
     
-    # Test Frontend (Port 5174)
-    print("\n🌐 Testing Frontend (Port 5174):")
-    frontend_ok, _ = test_endpoint("http://localhost:5174/", description="Frontend Application")
+    # Test Frontend (Port 5173)
+    print("\n🌐 Testing Frontend (Port 5173):")
+    frontend_ok, _ = test_endpoint("http://localhost:5173/", description="Frontend Application")
     
     # Summary
     print("\n" + "=" * 50)

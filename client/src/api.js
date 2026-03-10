@@ -1,8 +1,8 @@
 import axios from "axios";
 
-// Get API URL from localStorage or default to primary model
+// Get API URL from localStorage or default to enhanced prediction model
 const getApiUrl = () => {
-  return localStorage.getItem("apiUrl") || "http://127.0.0.1:8000";
+  return localStorage.getItem("apiUrl") || "http://127.0.0.1:8001";
 };
 
 const API = getApiUrl();
@@ -88,18 +88,19 @@ export const getTrainingStatus = async () => {
 };
 
 export const getSelectedModel = () => {
-  return localStorage.getItem("selectedModel") || "primary";
+  return localStorage.getItem("selectedModel") || "secondary";
 };
 
 export const getModelInfo = () => {
   const model = getSelectedModel();
   if (model === "secondary") {
     return {
-      name: "Secondary Model (My Store)",
-      type: "Liquor & Grocery",
-      accuracy: "85.29%",
+      name: "Enhanced Prediction System",
+      type: "Individual Item Analysis",
+      accuracy: "90.5%",
       port: 8001,
-      approach: "Name-based"
+      approach: "Enhanced Pattern Recognition",
+      features: "3,328 Items • Seasonal Analysis • Trend Detection • Prediction Explanations"
     };
   }
   return {

@@ -25,3 +25,83 @@ code {
 #root {
   min-height: 100vh;
 }
+/* Mobile Responsiveness for Deployment */
+@media (max-width: 768px) {
+  .bulk-prediction-page {
+    padding: 10px;
+  }
+  
+  .form-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .form-group {
+    width: 100%;
+  }
+  
+  .summary-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  
+  .products-table {
+    font-size: 12px;
+    overflow-x: auto;
+  }
+  
+  .products-table th,
+  .products-table td {
+    padding: 8px 4px;
+    min-width: 80px;
+  }
+  
+  .expanded-content {
+    padding: 10px;
+  }
+  
+  .projection-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .monthly-bars-chart {
+    overflow-x: auto;
+    padding-bottom: 10px;
+  }
+  
+  .page-header h1 {
+    font-size: 24px;
+  }
+  
+  .help-banner {
+    font-size: 14px;
+    padding: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .products-table {
+    font-size: 11px;
+  }
+  
+  .btn-primary,
+  .btn-secondary {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  
+  .date-shortcuts {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  
+  .btn-date-shortcut {
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+}

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  inventory-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./inventory_model/data:/app/inventory_model/data
+      - ./inventory_model_secondary/data:/app/inventory_model_secondary/data
+    environment:
+      - PYTHONPATH=/app
+      - HOST=0.0.0.0
+      - PORT=8001
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  inventory-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "5174:5174"
+    depends_on:
+      - inventory-backend
+    environment:
+      - VITE_API_URL=http://localhost:8001
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5174/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  inventory_data:

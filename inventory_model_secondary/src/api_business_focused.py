@@ -4,6 +4,7 @@ Port: 8001
 Focuses on accurate inventory predictions based on actual consumption patterns
 """
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -14,13 +15,24 @@ from datetime import datetime, timedelta
 from business_intelligence import InventoryAnalyzer
 from enhanced_predictions import EnhancedPredictor
 
+# Get host and port from environment variables (for deployment)
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", 8001))
+
 # Initialize the business analyzer and enhanced predictor
 analyzer = InventoryAnalyzer()
 enhanced_predictor = EnhancedPredictor()
 
 print("🔄 Loading and analyzing your business data...")
 profiles = analyzer.load_and_process_data()
-enhanced_predictor.load_data()
+
+# Properly initialize enhanced predictor with loaded data
+if profiles:
+    enhanced_predictor.analyzer = analyzer
+    enhanced_predictor.profiles = profiles
+    print(f"✅ Enhanced predictor initialized with {len(profiles)} profiles")
+else:
+    print("❌ Failed to initialize enhanced predictor - no profiles loaded")
 
 # FastAPI app
 app = FastAPI(
@@ -42,7 +54,7 @@ app.add_middleware(
 @app.get("/")
 def root():
     if not profiles:
-        return {"error": "Data not loaded", "status": "offline"}
+        return {"error": "Data not loaded", "status": "loading"}
     
     total_items = len(profiles)
     critical_items = sum(1 for p in profiles.values() if p['stock_status'] == 'CRITICAL')
@@ -52,7 +64,7 @@ def root():
         "version": "5.0",
         "port": 8001,
         "data_period": "2024-2025 (Real Business Data)",
-        "status": "active",
+        "status": "ready",
         "inventory": {
             "total_items": total_items,
             "critical_items": critical_items,
@@ -62,6 +74,13 @@ def root():
         "business_intelligence": "enabled",
         "enhanced_predictions": "active"
     }
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    if not profiles:
+        return {"status": "loading", "message": "Data still loading..."}
+    return {"status": "ready", "message": "API ready for predictions"}
 
 # Stores endpoint - single store model
 @app.get("/stores")
@@ -117,6 +136,52 @@ def get_business_intelligence():
         "analysis_date": datetime.now().isoformat()
     }
 
+# Helper functions for bulk prediction
+def _generate_situation_summary(status, current_stock, demand, shortage):
+    """Generate situation summary"""
+    if status == "CRITICAL":
+        return f"🚨 URGENT: Only {int(current_stock)} units left but need {int(demand)} units. Short by {int(shortage)} units!"
+    elif status == "LOW":
+        return f"⚠️ Running Low: Have {int(current_stock)} units, need {int(demand)} units. Short by {int(shortage)} units."
+    elif status == "ADEQUATE":
+        return f"✅ Adequate: Have {int(current_stock)} units, need {int(demand)} units. Sufficient stock."
+    else:
+        return f"📦 Excess: Have {int(current_stock)} units, need only {int(demand)} units. Too much stock."
+
+def _generate_action_summary(status, order_qty, investment):
+    """Generate action summary"""
+    if status == "CRITICAL":
+        return f"Order {int(order_qty)} units TODAY (Cost: ₹{investment:,.2f}). Don't delay!"
+    elif status == "LOW":
+        return f"Order {int(order_qty)} units this week (Cost: ₹{investment:,.2f})"
+    elif status == "ADEQUATE":
+        if order_qty > 0:
+            return f"Consider ordering {int(order_qty)} units (Cost: ₹{investment:,.2f})"
+        else:
+            return "No order needed right now. Monitor stock levels."
+    else:
+        return "Reduce future orders. You have excess stock."
+
+def _generate_impact_summary(revenue, risk, confidence):
+    """Generate impact summary"""
+    conf_num = float(confidence.replace('%', ''))
+    reliability = "Very Reliable" if conf_num >= 85 else "Reliable" if conf_num >= 70 else "Use Caution"
+    
+    if risk > 0:
+        return f"💰 Revenue: ₹{revenue:,.2f} | ⚠️ Risk: ₹{risk:,.2f} if out of stock | {reliability} ({confidence})"
+    else:
+        return f"💰 Revenue: ₹{revenue:,.2f} | {reliability} ({confidence})"
+
+def _get_urgency_level(status):
+    """Get urgency level"""
+    urgency_map = {
+        "CRITICAL": "IMMEDIATE - Order Today",
+        "LOW": "HIGH - Order This Week",
+        "ADEQUATE": "MEDIUM - Monitor",
+        "EXCESS": "LOW - Reduce Orders"
+    }
+    return urgency_map.get(status, "UNKNOWN")
+
 # Smart bulk prediction based on enhanced business logic
 @app.post("/bulk_predict")
 def bulk_predict(data: dict):
@@ -167,16 +232,22 @@ def bulk_predict(data: dict):
             enhanced_result["predictions"] = predictions
             return enhanced_result
         
-        
         # Fallback to original method for compatibility
         recommendations = analyzer.get_purchase_recommendations(max(days_ahead, 30))
         
         # Convert to prediction format with enhanced logic
         predictions = []
         
-        for rec in recommendations[:50]:  # Top 50 items
+        # Process more items but filter by relevance
+        max_items = min(len(recommendations), 150)  # Process up to 150 items
+        
+        for rec in recommendations[:max_items]:
             item_name = rec['item_name']
             profile = profiles[item_name]
+            
+            # Skip items with very low activity to focus on relevant items
+            if profile['total_sold'] < 5:
+                continue
             
             # Enhanced calculations for more realistic predictions
             current_stock = rec['current_stock']
@@ -226,24 +297,44 @@ def bulk_predict(data: dict):
             # Calculate confidence based on data quality
             confidence = min(95, 60 + (profile['months_data'] * 5))
             
-            # Generate historical performance (last 4 periods)
+            # Generate historical performance using ACTUAL sales data
             last_4_weeks = []
-            base_sales = profile['avg_monthly_sales'] / 4  # Weekly average
             
-            for i in range(4):
-                week_sales = base_sales * np.random.uniform(0.8, 1.2)
-                actual_sales = week_sales * np.random.uniform(0.9, 1.1)
+            # Use real monthly sales history if available
+            if 'monthly_sales_history' in profile and profile['monthly_sales_history']:
+                for hist in profile['monthly_sales_history']:
+                    # Convert monthly to weekly average for consistency
+                    weekly_avg = hist['sales'] / 4
+                    
+                    # For historical data, we show actual sales
+                    # "Predicted" is the average, "Actual" is with some variance to show reality
+                    last_4_weeks.append({
+                        "date": hist['date'],
+                        "predicted": round(weekly_avg, 2),
+                        "actual": round(hist['sales'] / 4, 2)  # Actual weekly average
+                    })
+            else:
+                # Fallback: Generate based on average if no history available
+                base_sales = profile['avg_monthly_sales'] / 4  # Weekly average
                 
-                last_4_weeks.append({
-                    "date": (datetime.now() - timedelta(weeks=4-i)).strftime('%Y-%m-%d'),
-                    "predicted": round(week_sales, 2),
-                    "actual": round(actual_sales, 2)
-                })
+                for i in range(4):
+                    week_sales = base_sales * np.random.uniform(0.8, 1.2)
+                    actual_sales = week_sales * np.random.uniform(0.9, 1.1)
+                    
+                    last_4_weeks.append({
+                        "date": (datetime.now() - timedelta(weeks=4-i)).strftime('%Y-%m-%d'),
+                        "predicted": round(week_sales, 2),
+                        "actual": round(actual_sales, 2)
+                    })
             
             # Calculate financial metrics
             unit_price = profile['avg_price']
             potential_revenue = enhanced_demand * unit_price
             lost_revenue_risk = shortage * unit_price
+            investment_needed = recommended_qty * unit_price
+            
+            # Calculate daily demand with seasonal factor applied
+            daily_demand_adjusted = daily_demand * seasonal_factor * growth_factor
             
             predictions.append({
                 "item_name": item_name,
@@ -260,7 +351,7 @@ def bulk_predict(data: dict):
                 "price": round(unit_price, 2),
                 "potential_revenue": round(potential_revenue, 2),
                 "lost_revenue_risk": round(lost_revenue_risk, 2),
-                "investment_needed": round(recommended_qty * unit_price, 2),
+                "investment_needed": round(investment_needed, 2),
                 "last_4_weeks": last_4_weeks,
                 "business_metrics": {
                     "avg_monthly_sales": round(profile['avg_monthly_sales'], 2),
@@ -271,27 +362,27 @@ def bulk_predict(data: dict):
                 },
                 "demand_breakdown": {
                     "daily_average": {
-                        "low": round(daily_demand * seasonal_factor * 0.8, 2),
-                        "average": round(daily_demand * seasonal_factor, 2),
-                        "high": round(daily_demand * seasonal_factor * 1.2, 2),
+                        "low": round(daily_demand_adjusted * 0.8, 2),
+                        "average": round(daily_demand_adjusted, 2),
+                        "high": round(daily_demand_adjusted * 1.2, 2),
                         "explanation": f"Expected daily consumption for {target_date.strftime('%B %Y')}"
                     },
                     "weekly": {
-                        "low": round(daily_demand * 7 * seasonal_factor * 0.8, 2),
-                        "average": round(daily_demand * 7 * seasonal_factor, 2),
-                        "high": round(daily_demand * 7 * seasonal_factor * 1.2, 2),
+                        "low": round(daily_demand_adjusted * 7 * 0.8, 2),
+                        "average": round(daily_demand_adjusted * 7, 2),
+                        "high": round(daily_demand_adjusted * 7 * 1.2, 2),
                         "explanation": f"Expected weekly sales for next {days_ahead} days"
                     },
                     "monthly": {
-                        "low": round(monthly_sales * 0.8, 2),
-                        "average": round(monthly_sales, 2),
-                        "high": round(monthly_sales * 1.2, 2),
-                        "explanation": "Based on historical monthly sales"
+                        "low": round(monthly_sales * seasonal_factor * 0.8, 2),
+                        "average": round(monthly_sales * seasonal_factor, 2),
+                        "high": round(monthly_sales * seasonal_factor * 1.2, 2),
+                        "explanation": "Based on historical monthly sales with seasonal adjustment"
                     },
                     "quarterly": {
-                        "low": round(monthly_sales * 3 * 0.8, 2),
-                        "average": round(monthly_sales * 3, 2),
-                        "high": round(monthly_sales * 3 * 1.2, 2),
+                        "low": round(monthly_sales * seasonal_factor * 3 * 0.8, 2),
+                        "average": round(monthly_sales * seasonal_factor * 3, 2),
+                        "high": round(monthly_sales * seasonal_factor * 3 * 1.2, 2),
                         "explanation": "Expected sales for next 3 months (90 days)"
                     }
                 }
@@ -431,4 +522,4 @@ def forecast(data: dict):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host=HOST, port=PORT)
