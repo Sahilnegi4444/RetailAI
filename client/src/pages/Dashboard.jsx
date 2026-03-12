@@ -54,13 +54,16 @@ const Dashboard = () => {
   };
 
   const loadProducts = async (storeId) => {
+    console.log("🔍 [DASHBOARD] Loading products for store:", storeId);
     try {
-      const selectedModel = localStorage.getItem("selectedModel");
+      const selectedModel = localStorage.getItem("selectedModel") || "secondary";
+      console.log("🔍 [DASHBOARD] Selected model:", selectedModel);
       
       if (selectedModel === "secondary") {
         // For Model 2, load items instead of products
-        const response = await fetch(`${localStorage.getItem("apiUrl") || "http://127.0.0.1:8001"}/items`);
-        const data = await response.json();
+        console.log("🔍 [DASHBOARD] Fetching items from /api/items");
+        const data = await getProducts(storeId); // Use the API function which will call /api/items
+        console.log("✅ [DASHBOARD] Items data received:", data);
         
         if (data.grocery && data.liquor) {
           // Combine grocery and liquor items for dropdown
@@ -68,30 +71,38 @@ const Dashboard = () => {
             ...data.grocery.items.slice(0, 20), // First 20 grocery items
             ...data.liquor.items.slice(0, 10)   // First 10 liquor items
           ];
+          console.log("✅ [DASHBOARD] Combined items:", allItems.length);
           setProducts(allItems);
           
           // Auto-select first item
           if (allItems.length > 0) {
             setSelectedProduct(allItems[0]);
+            console.log("✅ [DASHBOARD] Auto-selected product:", allItems[0]);
           }
+          setLoading(false); // Stop loading after products are loaded
         } else {
           // Fallback to empty state for Model 2
+          console.log("⚠️ [DASHBOARD] No grocery/liquor data found");
           setProducts([]);
           setSelectedProduct("");
           setLoading(false); // Stop loading if no products
         }
       } else {
         // Original logic for Model 1
+        console.log("🔍 [DASHBOARD] Fetching products for Model 1");
         const data = await getProducts(storeId);
+        console.log("✅ [DASHBOARD] Products data received:", data);
         setProducts(data.products || []);
         
         // Auto-select first product
         if (data.products && data.products.length > 0) {
           setSelectedProduct(data.products[0]);
+          console.log("✅ [DASHBOARD] Auto-selected product:", data.products[0]);
         }
+        setLoading(false); // Stop loading after products are loaded
       }
     } catch (error) {
-      console.error("Failed to load products:", error);
+      console.error("❌ [DASHBOARD] Failed to load products:", error);
       setLoading(false); // Stop loading on error
     }
   };

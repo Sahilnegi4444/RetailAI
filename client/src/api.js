@@ -4,13 +4,55 @@ import axios from "axios";
 // In Docker/Nginx we use /api which proxies to backend
 const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
-console.log("🔧 Using API:", API_BASE_URL);
+console.log("🔧 [API CONFIG] Base URL:", API_BASE_URL);
+console.log("🔧 [API CONFIG] Environment:", import.meta.env.MODE);
+console.log("🔧 [API CONFIG] VITE_API_URL:", import.meta.env.VITE_API_URL);
 
 const getApiUrl = () => {
+  console.log("🔧 [API] Returning API URL:", API_BASE_URL);
   return API_BASE_URL;
 };
 
 const API = getApiUrl();
+
+// Add request interceptor for debugging
+axios.interceptors.request.use(
+  (config) => {
+    console.log(`🚀 [API REQUEST] ${config.method?.toUpperCase()} ${config.url}`, {
+      baseURL: config.baseURL,
+      fullURL: `${config.baseURL || ''}${config.url}`,
+      data: config.data,
+      params: config.params
+    });
+    return config;
+  },
+  (error) => {
+    console.error("❌ [API REQUEST ERROR]", error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for debugging
+axios.interceptors.response.use(
+  (response) => {
+    console.log(`✅ [API RESPONSE] ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+      status: response.status,
+      statusText: response.statusText,
+      dataSize: JSON.stringify(response.data).length,
+      data: response.data
+    });
+    return response;
+  },
+  (error) => {
+    console.error(`❌ [API ERROR] ${error.config?.method?.toUpperCase()} ${error.config?.url}`, {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      message: error.message,
+      data: error.response?.data
+    });
+    return Promise.reject(error);
+  }
+);
 
 export const getHistory = async (store, productOrItem) => {
   const res = await axios.get(`${API}/history/${store}/${productOrItem}`);
@@ -44,9 +86,20 @@ export const getStores = async () => {
 export const getProducts = async (storeId) => {
   const selectedModel = getSelectedModel();
   
+  console.log("🔍 [API] getProducts called with storeId:", storeId, "model:", selectedModel);
+  
   if (selectedModel === "secondary") {
     const res = await axios.get(`${API}/items`);
-    return { store_id: storeId, products: res.data.items || [], model: "secondary" };
+    console.log("✅ [API] Items response:", res.data);
+    
+    // Return the full response with grocery and liquor data
+    return { 
+      store_id: storeId, 
+      grocery: res.data.grocery,
+      liquor: res.data.liquor,
+      summary: res.data.summary,
+      model: "secondary" 
+    };
   } else {
     const res = await axios.get(`${API}/products/${storeId}`);
     return res.data;

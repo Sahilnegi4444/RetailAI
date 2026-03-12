@@ -19,6 +19,12 @@ from enhanced_predictions import EnhancedPredictor
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8001))
 
+print(f"🔧 [CONFIG] Starting API Server")
+print(f"🔧 [CONFIG] Host: {HOST}")
+print(f"🔧 [CONFIG] Port: {PORT}")
+print(f"🔧 [CONFIG] Environment: {os.getenv('ENVIRONMENT', 'development')}")
+print(f"🔧 [CONFIG] Python Path: {os.getenv('PYTHONPATH', 'not set')}")
+
 # Initialize the business analyzer and enhanced predictor
 analyzer = InventoryAnalyzer()
 enhanced_predictor = EnhancedPredictor()
@@ -53,13 +59,15 @@ app.add_middleware(
 # Root endpoint
 @app.get("/")
 def root():
+    print(f"🔍 [ENDPOINT] GET / - Root endpoint called")
     if not profiles:
+        print(f"⚠️ [ENDPOINT] Data not loaded yet")
         return {"error": "Data not loaded", "status": "loading"}
     
     total_items = len(profiles)
     critical_items = sum(1 for p in profiles.values() if p['stock_status'] == 'CRITICAL')
     
-    return {
+    response = {
         "model": "Business-Focused Inventory Management",
         "version": "5.0",
         "port": 8001,
@@ -74,6 +82,8 @@ def root():
         "business_intelligence": "enabled",
         "enhanced_predictions": "active"
     }
+    print(f"✅ [ENDPOINT] Returning root response: {response}")
+    return response
 
 # Health check endpoint
 @app.get("/health")
@@ -85,16 +95,21 @@ def health_check():
 # Stores endpoint - single store model
 @app.get("/stores")
 def get_stores():
-    return {
+    print(f"🔍 [ENDPOINT] GET /stores - Stores endpoint called")
+    response = {
         "stores": ["MY_STORE"],
         "model": "business_focused",
         "note": "Single store model based on your actual sales data"
     }
+    print(f"✅ [ENDPOINT] Returning stores: {response}")
+    return response
 
 # Items endpoint with business intelligence
 @app.get("/items")
 def get_items():
+    print(f"🔍 [ENDPOINT] GET /items - Items endpoint called")
     if not profiles:
+        print(f"⚠️ [ENDPOINT] Data not loaded yet")
         return {"error": "Data not loaded"}
     
     grocery_items = [(name, profile) for name, profile in profiles.items() if profile['category'] == 'Grocery']
@@ -104,7 +119,7 @@ def get_items():
     grocery_items.sort(key=lambda x: x[1]['total_sold'], reverse=True)
     liquor_items.sort(key=lambda x: x[1]['total_sold'], reverse=True)
     
-    return {
+    response = {
         "grocery": {
             "items": [item[0] for item in grocery_items[:50]],
             "total": len(grocery_items),
@@ -123,6 +138,8 @@ def get_items():
             "analysis_type": "consumption_based"
         }
     }
+    print(f"✅ [ENDPOINT] Returning {len(profiles)} items (Grocery: {len(grocery_items)}, Liquor: {len(liquor_items)})")
+    return response
 
 # Business intelligence endpoint
 @app.get("/business_intelligence")
