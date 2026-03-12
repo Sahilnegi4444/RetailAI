@@ -1,8 +1,14 @@
 import axios from "axios";
 
-// Get API URL from localStorage or default to enhanced prediction model
+// API Configuration for Deployment
+// For local: http://localhost:8001
+// For production: Set VITE_API_URL environment variable in Vercel
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
+
+console.log("🔧 Using API:", API_BASE_URL);
+
 const getApiUrl = () => {
-  return localStorage.getItem("apiUrl") || "http://127.0.0.1:8001";
+  return API_BASE_URL;
 };
 
 const API = getApiUrl();

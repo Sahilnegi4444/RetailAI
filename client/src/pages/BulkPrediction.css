@@ -1935,3 +1935,85 @@ th .help-tooltip {
   margin: 5px 0;
   color: #991b1b;
 }
+/* Enhanced prediction context styling */
+.prediction-context {
+  margin-top: 15px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border-left: 3px solid #3b82f6;
+}
+
+.context-item {
+  margin: 8px 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.context-item strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.context-item:first-child {
+  margin-top: 0;
+}
+
+.context-item:last-child {
+  margin-bottom: 0;
+}
+
+/* Fix for prediction factors when they come as string */
+.factors-list .factor-text {
+  color: #374151;
+  line-height: 1.5;
+}
+
+.factors-list .factor-item {
+  margin: 6px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.factors-list .factor-bullet {
+  color: #3b82f6;
+  font-weight: bold;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+/* Main prediction styling */
+.projection-card.main-prediction {
+  border: 2px solid #3b82f6;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.projection-card.main-prediction .projection-header h5 {
+  color: #1e40af;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.projection-card.main-prediction .projection-subtitle {
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.proj-value.main-value {
+  background: #3b82f6;
+  color: white;
+  border-radius: 8px;
+  padding: 8px;
+  transform: scale(1.05);
+}
+
+.proj-value.main-value strong {
+  color: white;
+  font-size: 18px;
+}
+
+.proj-value.main-value span {
+  color: #dbeafe;
+  font-weight: 600;
+}

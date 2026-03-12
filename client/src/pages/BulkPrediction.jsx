@@ -536,7 +536,8 @@ const BulkPrediction = () => {
                                 <div className="prediction-explanation-section">
                                   <h3>🧠 Prediction Analysis</h3>
                                   <p className="section-note">
-                                    Understanding why the prediction is <strong>{product.predicted_demand}</strong> units vs monthly average of <strong>{product.trend_info?.monthly_average?.toFixed(1) || 'N/A'}</strong> units
+                                    Prediction for <strong>ENTIRE {new Date(predictionDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</strong> - 
+                                    Expected demand: <strong>{product.predicted_demand}</strong> units
                                   </p>
                                   
                                   <div className="prediction-vs-recommendation">
@@ -544,11 +545,11 @@ const BulkPrediction = () => {
                                       <div className="comparison-item predicted">
                                         <div className="comparison-header">
                                           <span className="comparison-icon">📈</span>
-                                          <h4>Predicted Demand</h4>
+                                          <h4>Monthly Demand Forecast</h4>
                                         </div>
                                         <div className="comparison-value">{product.predicted_demand} units</div>
                                         <p className="comparison-explanation">
-                                          {product.recommendation_vs_prediction?.predicted_explanation || "Expected consumption based on patterns"}
+                                          Expected consumption for entire {new Date(predictionDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                                         </p>
                                       </div>
                                       
@@ -572,13 +573,63 @@ const BulkPrediction = () => {
                                   <div className="prediction-factors-list">
                                     <h4>🔍 Factors Affecting This Prediction:</h4>
                                     <ul className="factors-list">
-                                      {(Array.isArray(product.prediction_factors) ? product.prediction_factors : []).map((factor, idx) => (
-                                        <li key={idx} className="factor-item">
-                                          <span className="factor-bullet">•</span>
-                                          <span className="factor-text">{factor}</span>
-                                        </li>
-                                      ))}
+                                      {(() => {
+                                        // Parse prediction factors properly
+                                        let factors = [];
+                                        if (Array.isArray(product.prediction_factors)) {
+                                          factors = product.prediction_factors;
+                                        } else if (typeof product.prediction_factors === 'string') {
+                                          // Split string factors by bullet points or newlines
+                                          factors = product.prediction_factors
+                                            .split(/[•\n]/)
+                                            .filter(f => f.trim().length > 0)
+                                            .map(f => f.trim());
+                                        }
+                                        
+                                        return factors.map((factor, idx) => (
+                                          <li key={idx} className="factor-item">
+                                            <span className="factor-bullet">•</span>
+                                            <span className="factor-text">{factor}</span>
+                                          </li>
+                                        ));
+                                      })()}
                                     </ul>
+                                    
+                                    {/* Additional context based on seasonal info */}
+                                    {product.seasonal_info && (
+                                      <div className="prediction-context">
+                                        <div className="context-item">
+                                          <strong>Seasonal Pattern:</strong> 
+                                          {product.seasonal_info.has_historical_sales ? 
+                                            ` Item sells in ${new Date(predictionDate).toLocaleDateString('en-US', { month: 'long' })} (${product.seasonal_info.actual_month_sales?.toFixed(0) || 0} units historical average)` :
+                                            ` Item doesn't typically sell in ${new Date(predictionDate).toLocaleDateString('en-US', { month: 'long' })}`
+                                          }
+                                        </div>
+                                        
+                                        {product.trend_info && (
+                                          <div className="context-item">
+                                            <strong>Trend Impact:</strong> 
+                                            {product.trend_info.sales_trend === 'decreasing' && 
+                                              ` Declining sales trend (${((1 - product.trend_info.yearly_decline_factor) * 100).toFixed(0)}% drop) reduces predictions`
+                                            }
+                                            {product.trend_info.sales_trend === 'increasing' && 
+                                              ` Growing sales trend increases predictions`
+                                            }
+                                            {product.trend_info.sales_trend === 'stable' && 
+                                              ` Stable sales trend - predictions based on historical average`
+                                            }
+                                          </div>
+                                        )}
+                                        
+                                        <div className="context-item">
+                                          <strong>Calculation Method:</strong> 
+                                          {product.seasonal_info.has_historical_sales ? 
+                                            ` Using actual ${new Date(predictionDate).toLocaleDateString('en-US', { month: 'long' })} sales data (${product.seasonal_info.actual_month_sales?.toFixed(0)} units) × trend factor × time period` :
+                                            ` No historical sales in ${new Date(predictionDate).toLocaleDateString('en-US', { month: 'long' })} - minimal prediction applied`
+                                          }
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                   
                                   {/* Seasonal Information */}
@@ -634,22 +685,32 @@ const BulkPrediction = () => {
                                       <div>
                                         <h5>Daily Average</h5>
                                         <p className="projection-subtitle">
-                                          {product.demand_breakdown?.daily_average?.explanation || "Average daily sales rate"}
+                                          {product.demand_breakdown?.daily_average?.explanation || 
+                                           `Based on actual ${new Date(predictionDate).toLocaleDateString('en-US', { month: 'long' })} historical pattern`}
                                         </p>
                                       </div>
                                     </div>
                                     <div className="projection-values">
                                       <div className="proj-value">
                                         <span>Low</span>
-                                        <strong>{product.demand_breakdown?.daily_average?.low || (product.predicted_demand / 30 * 0.8).toFixed(2)}</strong>
+                                        <strong>
+                                          {product.demand_breakdown?.daily_average?.low || 
+                                           (product.daily_demand * 0.8).toFixed(2)}
+                                        </strong>
                                       </div>
                                       <div className="proj-value highlight">
                                         <span>Average</span>
-                                        <strong>{product.demand_breakdown?.daily_average?.average || (product.predicted_demand / 30).toFixed(2)}</strong>
+                                        <strong>
+                                          {product.demand_breakdown?.daily_average?.average || 
+                                           product.daily_demand?.toFixed(2) || '0.00'}
+                                        </strong>
                                       </div>
                                       <div className="proj-value">
                                         <span>High</span>
-                                        <strong>{product.demand_breakdown?.daily_average?.high || (product.predicted_demand / 30 * 1.2).toFixed(2)}</strong>
+                                        <strong>
+                                          {product.demand_breakdown?.daily_average?.high || 
+                                           (product.daily_demand * 1.2).toFixed(2)}
+                                        </strong>
                                       </div>
                                     </div>
                                   </div>
@@ -661,49 +722,69 @@ const BulkPrediction = () => {
                                       <div>
                                         <h5>Weekly (7 Days)</h5>
                                         <p className="projection-subtitle">
-                                          {product.demand_breakdown?.weekly?.explanation || "Expected sales for the next week"}
+                                          {product.demand_breakdown?.weekly?.explanation || 
+                                           `Weekly projection based on ${new Date(predictionDate).toLocaleDateString('en-US', { month: 'long' })} pattern`}
                                         </p>
                                       </div>
                                     </div>
                                     <div className="projection-values">
                                       <div className="proj-value">
                                         <span>Low</span>
-                                        <strong>{product.demand_breakdown?.weekly?.low || 0}</strong>
+                                        <strong>
+                                          {product.demand_breakdown?.weekly?.low || 
+                                           (product.daily_demand * 7 * 0.8).toFixed(2)}
+                                        </strong>
                                       </div>
                                       <div className="proj-value highlight">
                                         <span>Average</span>
-                                        <strong>{product.demand_breakdown?.weekly?.average || 0}</strong>
+                                        <strong>
+                                          {product.demand_breakdown?.weekly?.average || 
+                                           (product.daily_demand * 7).toFixed(2)}
+                                        </strong>
                                       </div>
                                       <div className="proj-value">
                                         <span>High</span>
-                                        <strong>{product.demand_breakdown?.weekly?.high || 0}</strong>
+                                        <strong>
+                                          {product.demand_breakdown?.weekly?.high || 
+                                           (product.daily_demand * 7 * 1.2).toFixed(2)}
+                                        </strong>
                                       </div>
                                     </div>
                                   </div>
 
-                                  {/* Monthly */}
-                                  <div className="projection-card" key="monthly">
+                                  {/* Monthly - THIS IS THE MAIN PREDICTION */}
+                                  <div className="projection-card main-prediction" key="monthly">
                                     <div className="projection-header">
-                                      <span className="projection-icon">📅</span>
+                                      <span className="projection-icon">🎯</span>
                                       <div>
-                                        <h5>Monthly (30 Days)</h5>
+                                        <h5>ENTIRE {new Date(predictionDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h5>
                                         <p className="projection-subtitle">
-                                          {product.demand_breakdown?.monthly?.explanation || "Expected sales for the next month"}
+                                          <strong>MAIN PREDICTION:</strong> {product.demand_breakdown?.monthly?.explanation || 
+                                           `Complete month forecast based on historical pattern`}
                                         </p>
                                       </div>
                                     </div>
                                     <div className="projection-values">
                                       <div className="proj-value">
-                                        <span>Low</span>
-                                        <strong>{product.demand_breakdown?.monthly?.low || 0}</strong>
+                                        <span>Conservative</span>
+                                        <strong>
+                                          {product.demand_breakdown?.monthly?.low || 
+                                           (product.predicted_demand * 0.8).toFixed(2)}
+                                        </strong>
                                       </div>
-                                      <div className="proj-value highlight">
-                                        <span>Average</span>
-                                        <strong>{product.demand_breakdown?.monthly?.average || 0}</strong>
+                                      <div className="proj-value highlight main-value">
+                                        <span>Expected</span>
+                                        <strong>
+                                          {product.demand_breakdown?.monthly?.average || 
+                                           product.predicted_demand}
+                                        </strong>
                                       </div>
                                       <div className="proj-value">
-                                        <span>High</span>
-                                        <strong>{product.demand_breakdown?.monthly?.high || 0}</strong>
+                                        <span>Optimistic</span>
+                                        <strong>
+                                          {product.demand_breakdown?.monthly?.high || 
+                                           (product.predicted_demand * 1.2).toFixed(2)}
+                                        </strong>
                                       </div>
                                     </div>
                                   </div>

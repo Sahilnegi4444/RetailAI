@@ -21,21 +21,27 @@ class EnhancedPredictor:
         return self.profiles
     
     def predict_for_date(self, target_date, store_id="MY_STORE"):
-        """Generate predictions for a specific future date"""
+        """Generate predictions for a specific month"""
         if not self.profiles:
             return {"error": "Data not loaded"}
         
         target_dt = pd.to_datetime(target_date)
         current_dt = datetime.now()
-        days_ahead = (target_dt - current_dt).days
         
-        if days_ahead < 0:
-            return {"error": "Cannot predict for past dates"}
+        # Always predict for the ENTIRE MONTH of the target date
+        target_year = target_dt.year
+        target_month = target_dt.month
         
-        if days_ahead > 365:
-            return {"error": "Predictions limited to 1 year ahead"}
+        # Calculate days in the target month
+        if target_month == 12:
+            next_month = datetime(target_year + 1, 1, 1)
+        else:
+            next_month = datetime(target_year, target_month + 1, 1)
         
-        print(f"🎯 Generating predictions for {target_date} ({days_ahead} days ahead)")
+        current_month_start = datetime(target_year, target_month, 1)
+        days_in_month = (next_month - current_month_start).days
+        
+        print(f"🎯 Generating predictions for {target_dt.strftime('%B %Y')} ({days_in_month} days)")
         
         predictions = []
         
@@ -56,7 +62,7 @@ class EnhancedPredictor:
                     continue
                     
                 prediction = self._calculate_enhanced_prediction(
-                    item_name, profile, days_ahead, target_dt
+                    item_name, profile, days_in_month, target_dt
                 )
                 if prediction:
                     predictions.append(prediction)
@@ -67,10 +73,10 @@ class EnhancedPredictor:
         # Sort by priority and business impact
         predictions.sort(key=lambda x: (x['priority'], -x['business_impact']))
         
-        return self._format_prediction_response(predictions, target_date, days_ahead, store_id)
+        return self._format_prediction_response(predictions, target_date, days_in_month, store_id)
     
-    def _calculate_enhanced_prediction(self, item_name, profile, days_ahead, target_dt):
-        """Calculate enhanced prediction for a single item using ACTUAL historical data with proper seasonal logic"""
+    def _calculate_enhanced_prediction(self, item_name, profile, days_in_month, target_dt):
+        """Calculate enhanced prediction for a single item for the ENTIRE TARGET MONTH"""
         
         # Base calculations from REAL data
         monthly_sales = profile['avg_monthly_sales']
@@ -142,23 +148,25 @@ class EnhancedPredictor:
         else:
             trend_factor = yearly_decline_factor
         
-        # **REALISTIC DEMAND CALCULATION**
+        # **REALISTIC DEMAND CALCULATION FOR ENTIRE MONTH**
         if has_seasonal_sales and actual_target_month_sales > 0:
             # Use actual historical sales for this month with trend adjustment
-            daily_demand = (actual_target_month_sales / 30) * trend_factor
+            total_demand = actual_target_month_sales * trend_factor
+            daily_demand = total_demand / days_in_month
         elif not has_seasonal_sales:
             # Item doesn't sell in this month - EXTREMELY minimal prediction
             if len(profile.get('monthly_sales_history', [])) >= 2:
                 # We have enough data to be confident item doesn't sell this month
-                daily_demand = 0  # Zero demand for non-seasonal months with sufficient data
+                total_demand = 0  # Zero demand for non-seasonal months with sufficient data
+                daily_demand = 0
             else:
                 # Less confident, but still very low
-                daily_demand = (monthly_sales * 0.001 / 30) * trend_factor  # 0.1% of monthly average
+                total_demand = monthly_sales * 0.001 * trend_factor  # 0.1% of monthly average
+                daily_demand = total_demand / days_in_month
         else:
             # Fallback to seasonal-adjusted average
-            daily_demand = (monthly_sales * seasonal_factor / 30) * trend_factor
-        
-        total_demand = daily_demand * days_ahead
+            total_demand = monthly_sales * seasonal_factor * trend_factor
+            daily_demand = total_demand / days_in_month
         
         # **MINIMUM REALISTIC DEMAND** - For non-seasonal months, keep it ZERO or very low
         min_demand = 0  # Default minimum demand
@@ -255,11 +263,8 @@ class EnhancedPredictor:
         else:
             prediction_factors.append(f"Stable trend: Similar to last year same month")
         
-        # Time period explanation
-        if has_seasonal_sales:
-            prediction_factors.append(f"Prediction period: {days_ahead} days ahead (daily rate: {daily_demand:.1f} units/day)")
-        else:
-            prediction_factors.append(f"Prediction period: {days_ahead} days ahead (ZERO expected sales - non-seasonal month)")
+        # Time period explanation - FIXED FOR MONTHLY PREDICTION
+        prediction_factors.append(f"Prediction period: Entire {target_dt.strftime('%B %Y')} ({days_in_month} days)")
         
         # Stock consideration
         prediction_factors.append(f"Current stock: {current_stock} units available")
@@ -276,7 +281,7 @@ class EnhancedPredictor:
         else:
             recommendation_explanation = {
                 "predicted_demand": float(total_demand),
-                "predicted_explanation": f"Expected consumption based on {target_dt.strftime('%B')} historical pattern and trend analysis",
+                "predicted_explanation": f"Expected consumption for entire {target_dt.strftime('%B %Y')} based on historical pattern and trend analysis",
                 "recommended_order": int(recommended_qty),
                 "recommendation_explanation": recommendation_reason,
                 "difference_explanation": f"Recommendation considers seasonal pattern, trend, and current stock ({current_stock} units)"
@@ -354,19 +359,19 @@ class EnhancedPredictor:
                     'low': float(round(daily_demand * 0.8, 2)),
                     'average': float(round(daily_demand, 2)),
                     'high': float(round(daily_demand * 1.2, 2)),
-                    'explanation': f"Based on {target_dt.strftime('%B')} historical pattern: {actual_target_month_sales:.1f} units" if has_seasonal_sales else f"Estimated for {target_dt.strftime('%B')} (no historical sales this month)"
+                    'explanation': f"Daily rate for {target_dt.strftime('%B')}: {actual_target_month_sales:.1f} ÷ {days_in_month} days" if has_seasonal_sales else f"No sales expected in {target_dt.strftime('%B')}"
                 },
                 'weekly': {
                     'low': float(round(daily_demand * 7 * 0.8, 2)),
                     'average': float(round(daily_demand * 7, 2)),
                     'high': float(round(daily_demand * 7 * 1.2, 2)),
-                    'explanation': f"Weekly projection based on {target_dt.strftime('%B')} pattern"
+                    'explanation': f"Weekly projection for {target_dt.strftime('%B')} based on daily rate"
                 },
                 'monthly': {
-                    'low': float(round(actual_target_month_sales * trend_factor * 0.8, 2)) if has_seasonal_sales else float(round(total_demand * 0.8, 2)),
-                    'average': float(round(actual_target_month_sales * trend_factor, 2)) if has_seasonal_sales else float(round(total_demand, 2)),
-                    'high': float(round(actual_target_month_sales * trend_factor * 1.2, 2)) if has_seasonal_sales else float(round(total_demand * 1.2, 2)),
-                    'explanation': f"Monthly forecast for {target_dt.strftime('%B')} based on historical pattern" if has_seasonal_sales else f"Estimated for {target_dt.strftime('%B')} (no historical sales)"
+                    'low': float(round(total_demand * 0.8, 2)),
+                    'average': float(round(total_demand, 2)),
+                    'high': float(round(total_demand * 1.2, 2)),
+                    'explanation': f"ENTIRE {target_dt.strftime('%B %Y')} forecast" + (f" (Historical: {actual_target_month_sales:.0f} units)" if has_seasonal_sales else " (No historical sales)")
                 },
                 'quarterly': {
                     'low': float(round(monthly_sales * 3 * 0.8, 2)),
