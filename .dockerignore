@@ -31,9 +31,9 @@ env/
 *.md
 !README.md
 
-# Node.js (not needed in backend)
-client/
-node_modules/
+# Node modules (but keep client/ directory itself)
+client/node_modules/
+client/dist/
 
 # Logs
 *.log
