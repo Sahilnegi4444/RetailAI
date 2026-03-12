@@ -1,9 +1,8 @@
 import axios from "axios";
 
-// API Configuration for Deployment
-// For local: http://localhost:8001
-// For production: Set VITE_API_URL environment variable in Vercel
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
+// API Configuration
+// In Docker/Nginx we use /api which proxies to backend
+const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
 console.log("🔧 Using API:", API_BASE_URL);
 
@@ -14,7 +13,7 @@ const getApiUrl = () => {
 const API = getApiUrl();
 
 export const getHistory = async (store, productOrItem) => {
-  const res = await axios.get(`${getApiUrl()}/history/${store}/${productOrItem}`);
+  const res = await axios.get(`${API}/history/${store}/${productOrItem}`);
   return res.data;
 };
 
@@ -22,15 +21,13 @@ export const getForecast = async (store, productOrItem, months) => {
   const selectedModel = getSelectedModel();
   
   if (selectedModel === "secondary") {
-    // Name-based model
-    const res = await axios.post(`${getApiUrl()}/forecast`, {
+    const res = await axios.post(`${API}/forecast`, {
       item_name: productOrItem,
       months: months
     });
     return res.data;
   } else {
-    // Product ID-based model
-    const res = await axios.post(`${getApiUrl()}/forecast`, {
+    const res = await axios.post(`${API}/forecast`, {
       store_id: store,
       product_id: productOrItem,
       months: months
@@ -40,7 +37,7 @@ export const getForecast = async (store, productOrItem, months) => {
 };
 
 export const getStores = async () => {
-  const res = await axios.get(`${getApiUrl()}/stores`);
+  const res = await axios.get(`${API}/stores`);
   return res.data;
 };
 
@@ -48,22 +45,21 @@ export const getProducts = async (storeId) => {
   const selectedModel = getSelectedModel();
   
   if (selectedModel === "secondary") {
-    // Get items instead of products for name-based model
-    const res = await axios.get(`${getApiUrl()}/items`);
+    const res = await axios.get(`${API}/items`);
     return { store_id: storeId, products: res.data.items || [], model: "secondary" };
   } else {
-    const res = await axios.get(`${getApiUrl()}/products/${storeId}`);
+    const res = await axios.get(`${API}/products/${storeId}`);
     return res.data;
   }
 };
 
 export const predictWithContext = async (data) => {
-  const res = await axios.post(`${getApiUrl()}/predict_with_context`, data);
+  const res = await axios.post(`${API}/predict_with_context`, data);
   return res.data;
 };
 
 export const getBulkPrediction = async (storeId, predictionDate) => {
-  const res = await axios.post(`${getApiUrl()}/bulk_predict`, {
+  const res = await axios.post(`${API}/bulk_predict`, {
     store_id: storeId,
     prediction_date: predictionDate
   });
@@ -73,23 +69,25 @@ export const getBulkPrediction = async (storeId, predictionDate) => {
 export const uploadData = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await axios.post(`${getApiUrl()}/upload_data`, formData, {
+
+  const res = await axios.post(`${API}/upload_data`, formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },
   });
+
   return res.data;
 };
 
 export const trainModel = async (storeId) => {
-  const res = await axios.post(`${getApiUrl()}/train_model`, {
+  const res = await axios.post(`${API}/train_model`, {
     store_id: storeId
   });
   return res.data;
 };
 
 export const getTrainingStatus = async () => {
-  const res = await axios.get(`${getApiUrl()}/training_status`);
+  const res = await axios.get(`${API}/training_status`);
   return res.data;
 };
 
@@ -99,6 +97,7 @@ export const getSelectedModel = () => {
 
 export const getModelInfo = () => {
   const model = getSelectedModel();
+
   if (model === "secondary") {
     return {
       name: "Enhanced Prediction System",
@@ -106,9 +105,11 @@ export const getModelInfo = () => {
       accuracy: "90.5%",
       port: 8001,
       approach: "Enhanced Pattern Recognition",
-      features: "3,328 Items • Seasonal Analysis • Trend Detection • Prediction Explanations"
+      features:
+        "3,328 Items • Seasonal Analysis • Trend Detection • Prediction Explanations"
     };
   }
+
   return {
     name: "Primary Model",
     type: "General Retail",
