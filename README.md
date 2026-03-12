@@ -174,6 +174,17 @@ retail-ai-prediction/
 
 ## 🚨 Troubleshooting
 
+### **VPS Deployment Issues**
+
+**Backend Container Not Starting on VPS?**
+- See: **[VPS-BACKEND-FIX-SUMMARY.md](VPS-BACKEND-FIX-SUMMARY.md)** for complete fix guide
+- Quick fix: Run `./fix-backend.sh` on your VPS
+- Or use one-liner from **[QUICK-FIX.txt](QUICK-FIX.txt)**
+
+**Diagnostic Tools**
+- Run `./diagnose.sh` to check system status
+- See **[BACKEND-FIX-README.md](BACKEND-FIX-README.md)** for detailed troubleshooting
+
 ### **Common Issues**
 
 **1. Port Already in Use**
@@ -201,10 +212,24 @@ npm install
 - Check file format: Tab-delimited with Net_Qty column
 - Verify file permissions
 
+**5. Docker Backend Not Responding (VPS)**
+```bash
+# Quick fix - rebuild backend
+docker-compose down
+docker rmi retail-ai-prediction-v2-backend
+docker-compose build --no-cache backend
+docker-compose up -d
+```
+
 ### **System Verification**
 ```bash
 # Test the system
 python test_system.py
+
+# Check Docker containers (VPS)
+docker ps
+docker logs retail-api
+docker exec -it retail-api curl http://localhost:8001/health
 ```
 
 ---

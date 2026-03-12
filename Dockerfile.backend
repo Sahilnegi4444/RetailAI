@@ -2,23 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system dependencies (cached layer)
 RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy and install Python dependencies FIRST (cached layer - only rebuilds if requirements change)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application code LAST (changes frequently, but previous layers are cached)
 COPY inventory_model_secondary/ ./inventory_model_secondary/
 COPY inventory_model/ ./inventory_model/
 
-ENV PYTHONPATH=/app
-ENV HOST=0.0.0.0
-ENV PORT=8001
+# Environment variables
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    HOST=0.0.0.0 \
+    PORT=8001
 
 EXPOSE 8001
 
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
- CMD curl -f http://localhost:8001/health || exit 1
+    CMD curl -f http://localhost:8001/health || exit 1
 
-CMD ["python", "inventory_model_secondary/src/api_business_focused.py"]
+# Use uvicorn directly for reliability
+CMD ["uvicorn", "inventory_model_secondary.src.api_business_focused:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -188,6 +188,62 @@ VITE_APP_NAME="Retail Prediction webApp"
 
 ## 🚨 Troubleshooting
 
+### ⚠️ MOST COMMON ISSUE: Backend Container Not Starting
+
+**Symptom**: `docker logs retail-api` shows nothing, or API not responding on port 8001
+
+**Cause**: Old Docker image cached, not using updated Dockerfile with uvicorn
+
+**Quick Fix**: Run the automated fix script:
+```bash
+# On VPS (Linux)
+chmod +x fix-backend.sh
+./fix-backend.sh
+```
+
+**Manual Fix**:
+```bash
+# Stop everything
+docker-compose down
+
+# Remove old backend image
+docker rmi retail-ai-prediction-v2-backend
+
+# Rebuild backend with new Dockerfile (no cache)
+docker-compose build --no-cache backend
+
+# Start everything
+docker-compose up -d
+
+# Wait 15 seconds for data loading (22,384 records)
+sleep 15
+
+# Check logs - should see uvicorn startup
+docker logs retail-api
+
+# Test API
+docker exec -it retail-api curl http://localhost:8001/health
+```
+
+**Expected Output**:
+```
+INFO:     Started server process
+INFO:     Waiting for application startup.
+🔧 [CONFIG] Starting API Server
+🔄 Loading and analyzing your business data...
+✅ Loaded 3328 items from business data
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001
+```
+
+**If Still Failing**:
+```bash
+# Enter container and run manually to see errors
+docker exec -it retail-api bash
+cd /app
+uvicorn inventory_model_secondary.src.api_business_focused:app --host 0.0.0.0 --port 8001
+```
+
 ### Common Issues
 
 #### 1. Port 5015 Already in Use
