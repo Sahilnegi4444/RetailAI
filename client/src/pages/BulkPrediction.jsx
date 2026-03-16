@@ -4,7 +4,62 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
 import "./BulkPrediction.css";
 
+// Export utility functions
+const exportToCSV = (data, filename) => {
+  const csv = convertToCSV(data);
+  downloadCSV(csv, filename);
+};
+
+const convertToCSV = (data) => {
+  if (!data || data.length === 0) return '';
+  
+  const headers = Object.keys(data[0]);
+  const csvRows = [];
+  
+  // Add headers
+  csvRows.push(headers.join(','));
+  
+  // Add data rows
+  for (const row of data) {
+    const values = headers.map(header => {
+      const value = row[header];
+      // Escape quotes and wrap in quotes if contains comma
+      const escaped = ('' + value).replace(/"/g, '""');
+      return `"${escaped}"`;
+    });
+    csvRows.push(values.join(','));
+  }
+  
+  return csvRows.join('\n');
+};
+
+const downloadCSV = (csv, filename) => {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
 const BulkPrediction = () => {
+  // Export filter states
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFilters, setExportFilters] = useState({
+    status: 'all',
+    minPrice: '',
+    maxPrice: '',
+    minStock: '',
+    maxStock: '',
+    minDemand: '',
+    maxDemand: '',
+    category: 'all'
+  });
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState("");
   const [predictionDate, setPredictionDate] = useState(
@@ -141,6 +196,91 @@ const BulkPrediction = () => {
 
   const toggleExpand = (productKey) => {
     setExpandedProduct(expandedProduct === productKey ? null : productKey);
+  };
+
+  // Export functions
+  const handleExport = () => {
+    setShowExportModal(true);
+  };
+
+  const applyExportFilters = (predictions) => {
+    return predictions.filter(product => {
+      // Status filter
+      if (exportFilters.status !== 'all' && product.status !== exportFilters.status) {
+        return false;
+      }
+
+      // Category filter
+      if (exportFilters.category !== 'all' && product.category?.toLowerCase() !== exportFilters.category.toLowerCase()) {
+        return false;
+      }
+
+      // Price filter
+      if (exportFilters.minPrice && product.price < parseFloat(exportFilters.minPrice)) {
+        return false;
+      }
+      if (exportFilters.maxPrice && product.price > parseFloat(exportFilters.maxPrice)) {
+        return false;
+      }
+
+      // Stock filter
+      if (exportFilters.minStock && product.current_stock < parseInt(exportFilters.minStock)) {
+        return false;
+      }
+      if (exportFilters.maxStock && product.current_stock > parseInt(exportFilters.maxStock)) {
+        return false;
+      }
+
+      // Demand filter
+      if (exportFilters.minDemand && product.predicted_demand < parseFloat(exportFilters.minDemand)) {
+        return false;
+      }
+      if (exportFilters.maxDemand && product.predicted_demand > parseFloat(exportFilters.maxDemand)) {
+        return false;
+      }
+
+      return true;
+    });
+  };
+
+  const executeExport = () => {
+    if (!result || !result.predictions) {
+      alert('No data to export');
+      return;
+    }
+
+    const filteredData = applyExportFilters(result.predictions);
+
+    if (filteredData.length === 0) {
+      alert('No items match the selected filters');
+      return;
+    }
+
+    // Prepare export data
+    const exportData = filteredData.map(product => ({
+      'Item Name': product.item_name || product.product_id,
+      'Category': product.category,
+      'Current Stock': product.current_stock,
+      'Predicted Demand': product.predicted_demand,
+      'Order Quantity': product.recommended_order,
+      'Unit Price': product.price,
+      'Order Value': (product.recommended_order * product.price).toFixed(2),
+      'Status': product.status,
+      'Confidence': product.confidence,
+      'Revenue Potential': product.revenue_potential || (product.predicted_demand * product.price).toFixed(2),
+      'Lost Revenue Risk': product.lost_revenue_risk || 0,
+      'Prediction Date': predictionDate
+    }));
+
+    const filename = `inventory-predictions-${predictionDate}-${exportFilters.status !== 'all' ? exportFilters.status : 'all'}.csv`;
+    exportToCSV(exportData, filename);
+
+    setShowExportModal(false);
+    alert(`Exported ${filteredData.length} items to ${filename}`);
+  };
+
+  const printReport = () => {
+    window.print();
   };
 
   return (
@@ -381,8 +521,12 @@ const BulkPrediction = () => {
             <div className="table-header">
               <h2>📊 Product Order Recommendations</h2>
               <div className="table-actions">
-                <button className="btn-secondary">Export to CSV</button>
-                <button className="btn-secondary">Print Report</button>
+                <button className="btn-secondary" onClick={handleExport}>
+                  📥 Export to CSV
+                </button>
+                <button className="btn-secondary" onClick={printReport}>
+                  🖨️ Print Report
+                </button>
               </div>
             </div>
 
@@ -1383,6 +1527,147 @@ const BulkPrediction = () => {
             </div>
           </div>
         </>
+      )}
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="modal-overlay" onClick={() => setShowExportModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📥 Export Data with Filters</h2>
+              <button className="modal-close" onClick={() => setShowExportModal(false)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <p className="modal-description">
+                Apply filters to export only the items you need. Leave filters empty to export all items.
+              </p>
+
+              <div className="export-filters">
+                <div className="filter-section">
+                  <h3>📊 Status Filter</h3>
+                  <select
+                    value={exportFilters.status}
+                    onChange={(e) => setExportFilters({...exportFilters, status: e.target.value})}
+                    className="form-input"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="CRITICAL">🚨 Critical Only</option>
+                    <option value="LOW">⚠️ Low Stock Only</option>
+                    <option value="ADEQUATE">✅ Adequate Only</option>
+                    <option value="EXCESS">📦 Excess Only</option>
+                  </select>
+                </div>
+
+                <div className="filter-section">
+                  <h3>🏷️ Category Filter</h3>
+                  <select
+                    value={exportFilters.category}
+                    onChange={(e) => setExportFilters({...exportFilters, category: e.target.value})}
+                    className="form-input"
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="grocery">Grocery</option>
+                    <option value="liquor">Liquor</option>
+                  </select>
+                </div>
+
+                <div className="filter-section">
+                  <h3>💰 Price Range</h3>
+                  <div className="range-inputs">
+                    <input
+                      type="number"
+                      placeholder="Min Price"
+                      value={exportFilters.minPrice}
+                      onChange={(e) => setExportFilters({...exportFilters, minPrice: e.target.value})}
+                      className="form-input"
+                    />
+                    <span className="range-separator">to</span>
+                    <input
+                      type="number"
+                      placeholder="Max Price"
+                      value={exportFilters.maxPrice}
+                      onChange={(e) => setExportFilters({...exportFilters, maxPrice: e.target.value})}
+                      className="form-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="filter-section">
+                  <h3>📦 Stock Range</h3>
+                  <div className="range-inputs">
+                    <input
+                      type="number"
+                      placeholder="Min Stock"
+                      value={exportFilters.minStock}
+                      onChange={(e) => setExportFilters({...exportFilters, minStock: e.target.value})}
+                      className="form-input"
+                    />
+                    <span className="range-separator">to</span>
+                    <input
+                      type="number"
+                      placeholder="Max Stock"
+                      value={exportFilters.maxStock}
+                      onChange={(e) => setExportFilters({...exportFilters, maxStock: e.target.value})}
+                      className="form-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="filter-section">
+                  <h3>📈 Demand Range</h3>
+                  <div className="range-inputs">
+                    <input
+                      type="number"
+                      placeholder="Min Demand"
+                      value={exportFilters.minDemand}
+                      onChange={(e) => setExportFilters({...exportFilters, minDemand: e.target.value})}
+                      className="form-input"
+                    />
+                    <span className="range-separator">to</span>
+                    <input
+                      type="number"
+                      placeholder="Max Demand"
+                      value={exportFilters.maxDemand}
+                      onChange={(e) => setExportFilters({...exportFilters, maxDemand: e.target.value})}
+                      className="form-input"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="filter-summary">
+                <p>
+                  <strong>Items matching filters:</strong>{' '}
+                  {result && result.predictions ? applyExportFilters(result.predictions).length : 0} of {result?.predictions?.length || 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="btn-secondary"
+                onClick={() => setExportFilters({
+                  status: 'all',
+                  minPrice: '',
+                  maxPrice: '',
+                  minStock: '',
+                  maxStock: '',
+                  minDemand: '',
+                  maxDemand: '',
+                  category: 'all'
+                })}
+              >
+                Clear Filters
+              </button>
+              <button className="btn-primary" onClick={executeExport}>
+                📥 Export to CSV
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

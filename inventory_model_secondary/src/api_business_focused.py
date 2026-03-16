@@ -85,6 +85,212 @@ def root():
     print(f"✅ [ENDPOINT] Returning root response: {response}")
     return response
 
+# Data format endpoint - shows expected Excel format
+@app.get("/data_format")
+def get_data_format():
+    """Return the expected Excel data format"""
+    return {
+        "format": "tab_delimited",
+        "file_types": [".xls", ".xlsx"],
+        "required_columns": [
+            {"name": "S.No", "type": "integer", "description": "Serial number"},
+            {"name": "GP_Index_No", "type": "string", "description": "Category identifier (I/ for Grocery, V/ for Liquor)"},
+            {"name": "pluno", "type": "string", "description": "Product code"},
+            {"name": "Item_Name", "type": "string", "description": "Product name (used for grouping)"},
+            {"name": "W_Rate", "type": "number", "description": "Wholesale rate"},
+            {"name": "R_Rate", "type": "number", "description": "Retail rate"},
+            {"name": "Qty", "type": "number", "description": "Quantity"},
+            {"name": "Refund_Qty", "type": "number", "description": "Refunded quantity"},
+            {"name": "Net_Qty", "type": "number", "description": "ACTUAL UNITS SOLD (most important!)"},
+            {"name": "R_Amt", "type": "number", "description": "Retail amount"},
+            {"name": "W_Amt", "type": "number", "description": "Wholesale amount"},
+            {"name": "Profit", "type": "number", "description": "Profit amount"},
+            {"name": "O_B", "type": "number", "description": "Opening balance"},
+            {"name": "Closing_Stock", "type": "number", "description": "Current stock level"},
+            {"name": "Net_Tax", "type": "number", "description": "Net tax"}
+        ],
+        "sample_data": [
+            {
+                "S.No": "1",
+                "GP_Index_No": "V/001",
+                "pluno": "12345",
+                "Item_Name": "BEER KING FISHER STRONG PREMIUM",
+                "W_Rate": "89.09",
+                "R_Rate": "95.00",
+                "Qty": "370",
+                "Refund_Qty": "7",
+                "Net_Qty": "363",
+                "R_Amt": "34485.00",
+                "W_Amt": "32339.67",
+                "Profit": "2145.33",
+                "O_B": "150",
+                "Closing_Stock": "124",
+                "Net_Tax": "0"
+            }
+        ],
+        "notes": [
+            "Net_Qty column contains the ACTUAL units sold - this is the most important column",
+            "Numeric columns may contain commas, quotes ('), and hash symbols (#) - system will clean these",
+            "Item_Name is used for grouping same products (not pluno)",
+            "GP_Index_No with 'I/' prefix = Grocery, 'V/' prefix = Liquor",
+            "One file per month - system will overwrite existing data for that month",
+            "File naming: Use format like '06 JUN.xls' or 'sale jun 24.xlsx'"
+        ],
+        "folder_structure": {
+            "path": "inventory_model/data/Datatype_02_secondary/CSD SALE/",
+            "structure": {
+                "2024": {
+                    "Grocery 2024": "Monthly Excel files for grocery items",
+                    "Liquor 2024": "Monthly Excel files for liquor items"
+                },
+                "2025": {
+                    "Grocery 2025": "Monthly Excel files for grocery items",
+                    "Liquor 2025": "Monthly Excel files for liquor items"
+                }
+            }
+        }
+    }
+
+# Upload monthly data endpoint
+@app.post("/upload_monthly_data")
+async def upload_monthly_data(
+    file: bytes,
+    year: int,
+    month: int,
+    category: str
+):
+    """Upload monthly sales data for a specific year, month, and category"""
+    try:
+        import io
+        from pathlib import Path
+        
+        # Validate inputs
+        if year not in [2024, 2025, 2026]:
+            return {"error": "Year must be 2024, 2025, or 2026"}
+        
+        if month < 1 or month > 12:
+            return {"error": "Month must be between 1 and 12"}
+        
+        if category not in ["Grocery", "Liquor"]:
+            return {"error": "Category must be 'Grocery' or 'Liquor'"}
+        
+        # Create target directory
+        base_path = Path("../../inventory_model/data/Datatype_02_secondary/CSD SALE")
+        if not base_path.exists():
+            base_path = Path("inventory_model/data/Datatype_02_secondary/CSD SALE")
+        
+        target_dir = base_path / str(year) / f"{category} {year}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename
+        month_names = ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+        filename = f"{month:02d} {month_names[month]}.xls"
+        target_file = target_dir / filename
+        
+        # Save file
+        with open(target_file, 'wb') as f:
+            f.write(file)
+        
+        # Verify file was saved
+        if not target_file.exists():
+            return {"error": "Failed to save file"}
+        
+        return {
+            "success": True,
+            "message": f"Successfully uploaded data for {month_names[month]} {year} - {category}",
+            "file_path": str(target_file),
+            "year": year,
+            "month": month,
+            "category": category,
+            "filename": filename,
+            "note": "Data uploaded successfully. Click 'Retrain Model' to update predictions with new data."
+        }
+        
+    except Exception as e:
+        print(f"Error uploading file: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+
+# Update current stock endpoint
+@app.post("/update_stock")
+def update_stock(data: dict):
+    """Update current stock levels for items"""
+    try:
+        updates = data.get("updates", [])
+        
+        if not updates:
+            return {"error": "No updates provided"}
+        
+        updated_count = 0
+        errors = []
+        
+        for update in updates:
+            item_name = update.get("item_name", "").upper().strip()
+            new_stock = update.get("current_stock")
+            
+            if item_name in profiles:
+                profiles[item_name]['current_stock'] = new_stock
+                updated_count += 1
+            else:
+                errors.append(f"Item not found: {item_name}")
+        
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "total_requested": len(updates),
+            "errors": errors if errors else None,
+            "message": f"Successfully updated stock for {updated_count} items"
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+# Retrain model endpoint
+@app.post("/retrain_model")
+def retrain_model():
+    """Reload and reprocess all data to update predictions"""
+    try:
+        global analyzer, enhanced_predictor, profiles
+        
+        print("🔄 Starting model retraining...")
+        
+        # Reload data
+        analyzer = InventoryAnalyzer()
+        enhanced_predictor = EnhancedPredictor()
+        
+        print("🔄 Loading and analyzing data...")
+        profiles = analyzer.load_and_process_data()
+        
+        if profiles:
+            enhanced_predictor.analyzer = analyzer
+            enhanced_predictor.profiles = profiles
+            
+            total_items = len(profiles)
+            critical_items = sum(1 for p in profiles.values() if p['stock_status'] == 'CRITICAL')
+            
+            print(f"✅ Model retrained successfully with {total_items} items")
+            
+            return {
+                "success": True,
+                "message": "Model retrained successfully with latest data",
+                "statistics": {
+                    "total_items": total_items,
+                    "critical_items": critical_items,
+                    "grocery_items": sum(1 for p in profiles.values() if p['category'] == 'Grocery'),
+                    "liquor_items": sum(1 for p in profiles.values() if p['category'] == 'Liquor')
+                },
+                "note": "All predictions will now use the updated data"
+            }
+        else:
+            return {"error": "Failed to load data during retraining"}
+            
+    except Exception as e:
+        print(f"Error retraining model: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+
 # Health check endpoint
 @app.get("/health")
 def health_check():

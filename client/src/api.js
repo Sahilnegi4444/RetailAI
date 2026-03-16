@@ -171,3 +171,40 @@ export const getModelInfo = () => {
     approach: "Product ID-based"
   };
 };
+
+// Get expected data format
+export const getDataFormat = async () => {
+  const res = await axios.get(`${API}/data_format`);
+  return res.data;
+};
+
+// Upload monthly data
+export const uploadMonthlyData = async (file, year, month, category) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("year", year);
+  formData.append("month", month);
+  formData.append("category", category);
+
+  const res = await axios.post(`${API}/upload_monthly_data`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+
+  return res.data;
+};
+
+// Update stock levels
+export const updateStock = async (updates) => {
+  const res = await axios.post(`${API}/update_stock`, {
+    updates: updates
+  });
+  return res.data;
+};
+
+// Retrain model with latest data
+export const retrainModel = async () => {
+  const res = await axios.post(`${API}/retrain_model`);
+  return res.data;
+};
