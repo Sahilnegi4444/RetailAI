@@ -21,7 +21,7 @@ class InventoryAnalyzer:
         
     def load_and_process_data(self):
         """Load and process all Excel files with proper business logic"""
-        print("🔍 Loading and analyzing your inventory data...")
+        print(" Loading and analyzing your inventory data...")
         
         all_data = []
         years = ['2024', '2025']
@@ -53,7 +53,7 @@ class InventoryAnalyzer:
                         df = self._clean_dataframe(df, year, month, category, excel_file.name)
                         if not df.empty:
                             all_data.append(df)
-                            print(f"  ✅ {excel_file.name}: {len(df)} items")
+                            print(f"   {excel_file.name}: {len(df)} items")
                             
                     except Exception as e:
                         # Try reading as Excel file if CSV fails
@@ -62,17 +62,17 @@ class InventoryAnalyzer:
                             df = self._clean_dataframe(df, year, month, category, excel_file.name)
                             if not df.empty:
                                 all_data.append(df)
-                                print(f"  ✅ {excel_file.name}: {len(df)} items (Excel format)")
+                                print(f"   {excel_file.name}: {len(df)} items (Excel format)")
                         except Exception as e2:
-                            print(f"  ❌ Error reading {excel_file.name}: {e}")
+                            print(f"   Error reading {excel_file.name}: {e}")
                             continue
         
         if all_data:
             self.processed_data = pd.concat(all_data, ignore_index=True)
-            print(f"\n📊 Total records loaded: {len(self.processed_data):,}")
+            print(f"\n Total records loaded: {len(self.processed_data):,}")
             return self._perform_eda()
         else:
-            print("❌ No data loaded!")
+            print(" No data loaded!")
             return None
     
     def _clean_dataframe(self, df, year, month, category, filename):
@@ -127,16 +127,16 @@ class InventoryAnalyzer:
     
     def _perform_eda(self):
         """Perform Exploratory Data Analysis"""
-        print("\n📈 Performing Exploratory Data Analysis...")
+        print("\n Performing Exploratory Data Analysis...")
         
         df = self.processed_data
         
         # Basic statistics
-        print(f"\n📊 Dataset Overview:")
-        print(f"  • Total Records: {len(df):,}")
-        print(f"  • Date Range: {df['Date'].min().strftime('%Y-%m')} to {df['Date'].max().strftime('%Y-%m')}")
-        print(f"  • Unique Items: {df['Item_Name_Clean'].nunique():,}")
-        print(f"  • Categories: {df['Category'].unique()}")
+        print(f"\n Dataset Overview:")
+        print(f"   Total Records: {len(df):,}")
+        print(f"   Date Range: {df['Date'].min().strftime('%Y-%m')} to {df['Date'].max().strftime('%Y-%m')}")
+        print(f"   Unique Items: {df['Item_Name_Clean'].nunique():,}")
+        print(f"   Categories: {df['Category'].unique()}")
         
         # Category breakdown
         category_stats = df.groupby('Category').agg({
@@ -146,13 +146,13 @@ class InventoryAnalyzer:
             'Current_Stock': 'sum'
         }).round(2)
         
-        print(f"\n🏷️ Category Breakdown:")
+        print(f"\n Category Breakdown:")
         for cat in category_stats.index:
             stats = category_stats.loc[cat]
-            print(f"  • {cat}:")
+            print(f"   {cat}:")
             print(f"    - Unique Items: {stats['Item_Name_Clean']:,}")
             print(f"    - Total Units Sold: {stats['Units_Sold']:,}")
-            print(f"    - Total Revenue: ₹{stats['Revenue']:,.2f}")
+            print(f"    - Total Revenue: {stats['Revenue']:,.2f}")
             print(f"    - Current Stock: {stats['Current_Stock']:,}")
         
         # Top selling items
@@ -163,10 +163,10 @@ class InventoryAnalyzer:
             'Retail_Price': 'mean'
         }).sort_values('Units_Sold', ascending=False).head(10)
         
-        print(f"\n🔥 Top 10 Selling Items:")
+        print(f"\n Top 10 Selling Items:")
         for i, (item, stats) in enumerate(top_items.iterrows(), 1):
             print(f"  {i:2d}. {item[:50]}")
-            print(f"      Units: {stats['Units_Sold']:,} | Revenue: ₹{stats['Revenue']:,.2f} | Category: {stats['Category']}")
+            print(f"      Units: {stats['Units_Sold']:,} | Revenue: {stats['Revenue']:,.2f} | Category: {stats['Category']}")
         
         # Stock analysis
         stock_analysis = df.groupby('Item_Name_Clean').agg({
@@ -185,16 +185,16 @@ class InventoryAnalyzer:
         critical_stock = stock_analysis[stock_analysis['Days_of_Stock'] < 7].shape[0]
         low_stock = stock_analysis[(stock_analysis['Days_of_Stock'] >= 7) & (stock_analysis['Days_of_Stock'] < 30)].shape[0]
         
-        print(f"\n⚠️ Stock Status:")
-        print(f"  • Critical Stock (< 7 days): {critical_stock} items")
-        print(f"  • Low Stock (7-30 days): {low_stock} items")
-        print(f"  • Adequate Stock (> 30 days): {len(stock_analysis) - critical_stock - low_stock} items")
+        print(f"\n Stock Status:")
+        print(f"   Critical Stock (< 7 days): {critical_stock} items")
+        print(f"   Low Stock (7-30 days): {low_stock} items")
+        print(f"   Adequate Stock (> 30 days): {len(stock_analysis) - critical_stock - low_stock} items")
         
         return self._create_item_profiles()
     
     def _create_item_profiles(self):
         """Create detailed profiles for each item"""
-        print("\n🎯 Creating item profiles for accurate predictions...")
+        print("\n Creating item profiles for accurate predictions...")
         
         df = self.processed_data
         
@@ -299,7 +299,7 @@ class InventoryAnalyzer:
             }
         
         self.item_profiles = profiles
-        print(f"✅ Created profiles for {len(profiles):,} unique items")
+        print(f" Created profiles for {len(profiles):,} unique items")
         
         return profiles
     
@@ -316,7 +316,7 @@ class InventoryAnalyzer:
     
     def get_purchase_recommendations(self, days_ahead=30):
         """Generate purchase recommendations for next period"""
-        print(f"\n🛒 Generating purchase recommendations for next {days_ahead} days...")
+        print(f"\n Generating purchase recommendations for next {days_ahead} days...")
         
         recommendations = []
         
@@ -386,26 +386,26 @@ class InventoryAnalyzer:
             total_revenue_potential += profile['revenue_potential']
         
         report = f"""
-📊 INVENTORY ANALYSIS SUMMARY
+ INVENTORY ANALYSIS SUMMARY
 {'='*50}
 
-📦 INVENTORY OVERVIEW:
-  • Total Unique Items: {total_items:,}
-  • Categories: {', '.join(f"{k}: {v}" for k, v in categories.items())}
-  • Current Investment: ₹{total_investment:,.2f}
-  • Monthly Revenue Potential: ₹{total_revenue_potential:,.2f}
+ INVENTORY OVERVIEW:
+   Total Unique Items: {total_items:,}
+   Categories: {', '.join(f"{k}: {v}" for k, v in categories.items())}
+   Current Investment: {total_investment:,.2f}
+   Monthly Revenue Potential: {total_revenue_potential:,.2f}
 
-⚠️ STOCK STATUS:
-  • Critical Stock: {stock_status_count['CRITICAL']} items (immediate action needed)
-  • Low Stock: {stock_status_count['LOW']} items (reorder soon)
-  • Adequate Stock: {stock_status_count['ADEQUATE']} items (good level)
-  • Excess Stock: {stock_status_count['EXCESS']} items (reduce orders)
+ STOCK STATUS:
+   Critical Stock: {stock_status_count['CRITICAL']} items (immediate action needed)
+   Low Stock: {stock_status_count['LOW']} items (reorder soon)
+   Adequate Stock: {stock_status_count['ADEQUATE']} items (good level)
+   Excess Stock: {stock_status_count['EXCESS']} items (reduce orders)
 
-🎯 RECOMMENDATIONS:
-  • Focus on {stock_status_count['CRITICAL']} critical items first
-  • Review {stock_status_count['EXCESS']} excess stock items
-  • Monitor sales trends for better forecasting
-  • Consider seasonal patterns in ordering
+ RECOMMENDATIONS:
+   Focus on {stock_status_count['CRITICAL']} critical items first
+   Review {stock_status_count['EXCESS']} excess stock items
+   Monitor sales trends for better forecasting
+   Consider seasonal patterns in ordering
 """
         return report
 
@@ -420,8 +420,8 @@ if __name__ == "__main__":
         # Get recommendations
         recommendations = analyzer.get_purchase_recommendations(30)
         
-        print(f"\n🛒 TOP 10 PURCHASE RECOMMENDATIONS:")
+        print(f"\n TOP 10 PURCHASE RECOMMENDATIONS:")
         for i, rec in enumerate(recommendations[:10], 1):
             print(f"{i:2d}. {rec['item_name'][:40]}")
             print(f"    Status: {rec['stock_status']} | Stock: {rec['current_stock']} | Need: {rec['recommended_qty']}")
-            print(f"    Investment: ₹{rec['investment_needed']:,.2f} | Category: {rec['category']}")
+            print(f"    Investment: {rec['investment_needed']:,.2f} | Category: {rec['category']}")

@@ -41,7 +41,7 @@ class EnhancedPredictor:
         current_month_start = datetime(target_year, target_month, 1)
         days_in_month = (next_month - current_month_start).days
         
-        print(f"🎯 Generating predictions for {target_dt.strftime('%B %Y')} ({days_in_month} days)")
+        print(f" Generating predictions for {target_dt.strftime('%B %Y')} ({days_in_month} days)")
         
         predictions = []
         
@@ -359,7 +359,7 @@ class EnhancedPredictor:
                     'low': float(round(daily_demand * 0.8, 2)),
                     'average': float(round(daily_demand, 2)),
                     'high': float(round(daily_demand * 1.2, 2)),
-                    'explanation': f"Daily rate for {target_dt.strftime('%B')}: {actual_target_month_sales:.1f} ÷ {days_in_month} days" if has_seasonal_sales else f"No sales expected in {target_dt.strftime('%B')}"
+                    'explanation': f"Daily rate for {target_dt.strftime('%B')}: {actual_target_month_sales:.1f}  {days_in_month} days" if has_seasonal_sales else f"No sales expected in {target_dt.strftime('%B')}"
                 },
                 'weekly': {
                     'low': float(round(daily_demand * 7 * 0.8, 2)),
@@ -451,7 +451,7 @@ class EnhancedPredictor:
                 "excess_stock": int(sum(1 for p in predictions if p['status'] == 'EXCESS')),
                 "total_order_value": float(round(total_order_value, 2)),
                 "total_revenue_at_risk": float(round(total_revenue_at_risk, 2)),
-                "currency": "₹",
+                "currency": "",
                 "prediction_accuracy": "enhanced",
                 "factors_considered": ["seasonality", "trends", "growth", "business_patterns"]
             },
@@ -472,12 +472,12 @@ if __name__ == "__main__":
     result = predictor.predict_for_date("2025-04-15")
     
     if "error" not in result:
-        print(f"\n🎯 Enhanced Predictions Summary:")
+        print(f"\n Enhanced Predictions Summary:")
         print(f"Total Products: {result['summary']['total_products']}")
         print(f"Critical Items: {result['summary']['critical_stock']}")
-        print(f"Total Investment: ₹{result['summary']['total_order_value']:,.2f}")
+        print(f"Total Investment: {result['summary']['total_order_value']:,.2f}")
         
-        print(f"\n🔥 Top 5 Recommendations:")
+        print(f"\n Top 5 Recommendations:")
         for i, item in enumerate(result['predictions'][:5], 1):
             print(f"{i}. {item['item_name'][:40]}")
-            print(f"   Demand: {item['predicted_demand']:.1f} | Order: {item['recommended_order']} | Investment: ₹{item['investment_needed']:,.2f}")
+            print(f"   Demand: {item['predicted_demand']:.1f} | Order: {item['recommended_order']} | Investment: {item['investment_needed']:,.2f}")

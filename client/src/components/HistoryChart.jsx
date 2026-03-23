@@ -27,9 +27,27 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 const HistoryChart = ({ data }) => {
+  // Ensure data is always an array
+  const chartData = Array.isArray(data) ? data : [];
+  
+  if (chartData.length === 0) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '300px',
+        color: '#94a3b8',
+        fontSize: '14px'
+      }}>
+        No historical data available
+      </div>
+    );
+  }
+
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={data}>
+      <LineChart data={chartData}>
         <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
         <XAxis 
           dataKey="date" 

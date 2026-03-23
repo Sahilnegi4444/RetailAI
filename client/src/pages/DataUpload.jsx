@@ -10,7 +10,9 @@ const DataUpload = () => {
   const [uploadResult, setUploadResult] = useState(null);
   const [retrainResult, setRetrainResult] = useState(null);
   const [dataFormat, setDataFormat] = useState(null);
-  const [showFormatPreview, setShowFormatPreview] = useState(false);
+  const [showFormatPreview, setShowFormatPreview] = useState(true);
+  const [modelHealth, setModelHealth] = useState(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
   
   // Form fields
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -23,6 +25,11 @@ const DataUpload = () => {
 
   useEffect(() => {
     loadDataFormat();
+    checkModelHealth();
+    
+    // Set up health check every 30 seconds
+    const healthCheckInterval = setInterval(checkModelHealth, 30000);
+    return () => clearInterval(healthCheckInterval);
   }, []);
 
   const loadDataFormat = async () => {
@@ -31,6 +38,41 @@ const DataUpload = () => {
       setDataFormat(data);
     } catch (error) {
       console.error("Failed to load data format:", error);
+    }
+  };
+
+  const checkModelHealth = async () => {
+    setCheckingHealth(true);
+    try {
+      const response = await fetch("http://localhost:8001/health");
+      const data = await response.json();
+      setModelHealth({
+        status: data.status,
+        message: data.message,
+        timestamp: new Date().toLocaleTimeString(),
+        isHealthy: data.status === "ready"
+      });
+    } catch (error) {
+      setModelHealth({
+        status: "error",
+        message: "Model API not responding",
+        timestamp: new Date().toLocaleTimeString(),
+        isHealthy: false
+      });
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
+
+  const checkUploadedFiles = async () => {
+    try {
+      const response = await fetch("http://localhost:8001/check_files");
+      const data = await response.json();
+      console.log("📁 Files in data directory:", data);
+      alert(`Files found:\n\n${JSON.stringify(data.files, null, 2)}\n\nTotal: ${data.total_files} files`);
+    } catch (error) {
+      console.error("Error checking files:", error);
+      alert("Error checking files. Check console for details.");
     }
   };
 
@@ -47,14 +89,14 @@ const DataUpload = () => {
         setFile(selectedFile);
         setUploadResult(null);
       } else {
-        alert("Please select an Excel file (.xls or .xlsx)");
+        setUploadResult({ error: "Please select an Excel file (.xls or .xlsx)" });
       }
     }
   };
 
   const handleUpload = async () => {
     if (!file) {
-      alert("Please select a file first");
+      setUploadResult({ error: "Please select a file first" });
       return;
     }
 
@@ -62,15 +104,26 @@ const DataUpload = () => {
     setUploadResult(null);
 
     try {
+      console.log("Starting upload with:", {
+        filename: file.name,
+        year: selectedYear,
+        month: selectedMonth,
+        category: selectedCategory
+      });
+      
       const result = await uploadMonthlyData(file, selectedYear, selectedMonth, selectedCategory);
+      
+      console.log("Upload result:", result);
       setUploadResult(result);
+      
       if (result.success) {
         setFile(null);
         document.getElementById("file-input").value = "";
       }
     } catch (error) {
-      setUploadResult({ error: error.response?.data?.error || "Failed to upload file" });
-      console.error(error);
+      console.error("Upload error details:", error);
+      const errorMessage = error.response?.data?.error || error.message || "Failed to upload file";
+      setUploadResult({ error: errorMessage });
     } finally {
       setUploading(false);
     }
@@ -109,7 +162,34 @@ const DataUpload = () => {
         </p>
       </div>
 
-      {/* Format Preview Section */}
+      {/* Model Health Status */}
+      {modelHealth && (
+        <div className={`model-health-card ${modelHealth.isHealthy ? 'healthy' : 'unhealthy'}`}>
+          <div className="health-content">
+            <span className="health-icon">{modelHealth.isHealthy ? '✅' : '❌'}</span>
+            <div className="health-info">
+              <h3>Model Status</h3>
+              <p>{modelHealth.message}</p>
+              <span className="health-time">Last checked: {modelHealth.timestamp}</span>
+            </div>
+          </div>
+          <button 
+            onClick={checkModelHealth}
+            disabled={checkingHealth}
+            className="btn-secondary btn-small"
+          >
+            {checkingHealth ? "Checking..." : "Check Now"}
+          </button>
+          <button 
+            onClick={checkUploadedFiles}
+            className="btn-secondary btn-small"
+          >
+            📁 Check Files
+          </button>
+        </div>
+      )}
+
+      {/* Format Preview Section - Always Visible */}
       <div className="format-preview-card">
         <div className="format-header">
           <h2>📋 Expected Excel Format</h2>
@@ -127,17 +207,17 @@ const DataUpload = () => {
               <div className="info-box">
                 <h3>📄 File Requirements</h3>
                 <ul>
-                  <li><strong>Format:</strong> {dataFormat.format} (Excel file)</li>
-                  <li><strong>File Types:</strong> {dataFormat.file_types.join(", ")}</li>
+                  <li><strong>Format:</strong> {dataFormat?.format || "Tab-delimited"} (Excel file)</li>
+                  <li><strong>File Types:</strong> {dataFormat?.file_types?.join(", ") || ".xls, .xlsx"}</li>
                   <li><strong>One file per month</strong> - System will overwrite existing data</li>
                   <li><strong>Naming:</strong> Use format like "06 JUN.xls" or "sale jun 24.xlsx"</li>
                 </ul>
               </div>
 
               <div className="info-box">
-                <h3>📊 Required Columns</h3>
+                <h3>📊 Required Columns (15 total)</h3>
                 <div className="columns-grid">
-                  {dataFormat.required_columns.slice(0, 6).map((col, idx) => (
+                  {dataFormat?.required_columns?.map((col, idx) => (
                     <div key={idx} className="column-item">
                       <strong>{col.name}</strong>
                       <span className="column-type">{col.type}</span>
@@ -145,12 +225,6 @@ const DataUpload = () => {
                     </div>
                   ))}
                 </div>
-                <button 
-                  className="btn-link"
-                  onClick={() => alert(dataFormat.required_columns.map(c => `${c.name}: ${c.description}`).join('\n'))}
-                >
-                  View All {dataFormat.required_columns.length} Columns
-                </button>
               </div>
             </div>
 
@@ -160,14 +234,14 @@ const DataUpload = () => {
                 <table className="sample-table">
                   <thead>
                     <tr>
-                      {Object.keys(dataFormat.sample_data[0]).slice(0, 8).map((key, idx) => (
+                      {dataFormat?.sample_data?.[0] && Object.keys(dataFormat.sample_data[0]).map((key, idx) => (
                         <th key={idx}>{key}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      {Object.values(dataFormat.sample_data[0]).slice(0, 8).map((val, idx) => (
+                      {dataFormat?.sample_data?.[0] && Object.values(dataFormat.sample_data[0]).map((val, idx) => (
                         <td key={idx}>{val}</td>
                       ))}
                     </tr>
@@ -179,7 +253,7 @@ const DataUpload = () => {
             <div className="important-notes">
               <h3>⚠️ Important Notes</h3>
               <ul>
-                {dataFormat.notes.map((note, idx) => (
+                {dataFormat?.notes?.map((note, idx) => (
                   <li key={idx}>{note}</li>
                 ))}
               </ul>

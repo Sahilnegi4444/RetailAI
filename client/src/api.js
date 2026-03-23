@@ -1,8 +1,9 @@
 import axios from "axios";
 
 // API Configuration
-// In Docker/Nginx we use /api which proxies to backend
-const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
+// For local development: http://localhost:8001
+// For Docker/Nginx: /api (proxies to backend)
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
 
 console.log("🔧 [API CONFIG] Base URL:", API_BASE_URL);
 console.log("🔧 [API CONFIG] Environment:", import.meta.env.MODE);
@@ -56,25 +57,42 @@ axios.interceptors.response.use(
 
 export const getHistory = async (store, productOrItem) => {
   const res = await axios.get(`${API}/history/${store}/${productOrItem}`);
-  return res.data;
+  // Return the history array if it exists, otherwise return empty array
+  if (res.data && res.data.history && Array.isArray(res.data.history)) {
+    return res.data.history;
+  }
+  return [];
 };
 
 export const getForecast = async (store, productOrItem, months) => {
   const selectedModel = getSelectedModel();
   
-  if (selectedModel === "secondary") {
-    const res = await axios.post(`${API}/forecast`, {
-      item_name: productOrItem,
-      months: months
-    });
-    return res.data;
-  } else {
-    const res = await axios.post(`${API}/forecast`, {
-      store_id: store,
-      product_id: productOrItem,
-      months: months
-    });
-    return res.data;
+  try {
+    if (selectedModel === "secondary") {
+      const res = await axios.post(`${API}/forecast`, {
+        item_name: productOrItem,
+        months: months
+      });
+      // Ensure we return an array
+      if (Array.isArray(res.data)) {
+        return res.data;
+      }
+      return [];
+    } else {
+      const res = await axios.post(`${API}/forecast`, {
+        store_id: store,
+        product_id: productOrItem,
+        months: months
+      });
+      // Ensure we return an array
+      if (Array.isArray(res.data)) {
+        return res.data;
+      }
+      return [];
+    }
+  } catch (error) {
+    console.error("Error fetching forecast:", error);
+    return [];
   }
 };
 
@@ -182,17 +200,31 @@ export const getDataFormat = async () => {
 export const uploadMonthlyData = async (file, year, month, category) => {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("year", year);
-  formData.append("month", month);
+  formData.append("year", String(year));
+  formData.append("month", String(month));
   formData.append("category", category);
 
-  const res = await axios.post(`${API}/upload_monthly_data`, formData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
+  console.log("📤 Uploading file:", {
+    filename: file.name,
+    size: file.size,
+    year,
+    month,
+    category,
+    url: `${API}/upload_monthly_data`
   });
 
-  return res.data;
+  try {
+    // Create axios instance without interceptors for this request
+    const instance = axios.create();
+    
+    const res = await instance.post(`${API}/upload_monthly_data`, formData);
+    
+    console.log("✅ Upload response:", res.data);
+    return res.data;
+  } catch (error) {
+    console.error("❌ Upload error:", error);
+    throw error;
+  }
 };
 
 // Update stock levels

@@ -5,7 +5,7 @@ Focuses on accurate inventory predictions based on actual consumption patterns
 """
 
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
@@ -19,26 +19,26 @@ from enhanced_predictions import EnhancedPredictor
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8001))
 
-print(f"🔧 [CONFIG] Starting API Server")
-print(f"🔧 [CONFIG] Host: {HOST}")
-print(f"🔧 [CONFIG] Port: {PORT}")
-print(f"🔧 [CONFIG] Environment: {os.getenv('ENVIRONMENT', 'development')}")
-print(f"🔧 [CONFIG] Python Path: {os.getenv('PYTHONPATH', 'not set')}")
+print(f" [CONFIG] Starting API Server")
+print(f" [CONFIG] Host: {HOST}")
+print(f" [CONFIG] Port: {PORT}")
+print(f" [CONFIG] Environment: {os.getenv('ENVIRONMENT', 'development')}")
+print(f" [CONFIG] Python Path: {os.getenv('PYTHONPATH', 'not set')}")
 
 # Initialize the business analyzer and enhanced predictor
 analyzer = InventoryAnalyzer()
 enhanced_predictor = EnhancedPredictor()
 
-print("🔄 Loading and analyzing your business data...")
+print(" Loading and analyzing your business data...")
 profiles = analyzer.load_and_process_data()
 
 # Properly initialize enhanced predictor with loaded data
 if profiles:
     enhanced_predictor.analyzer = analyzer
     enhanced_predictor.profiles = profiles
-    print(f"✅ Enhanced predictor initialized with {len(profiles)} profiles")
+    print(f" Enhanced predictor initialized with {len(profiles)} profiles")
 else:
-    print("❌ Failed to initialize enhanced predictor - no profiles loaded")
+    print(" Failed to initialize enhanced predictor - no profiles loaded")
 
 # FastAPI app
 app = FastAPI(
@@ -59,9 +59,9 @@ app.add_middleware(
 # Root endpoint
 @app.get("/")
 def root():
-    print(f"🔍 [ENDPOINT] GET / - Root endpoint called")
+    print(f" [ENDPOINT] GET / - Root endpoint called")
     if not profiles:
-        print(f"⚠️ [ENDPOINT] Data not loaded yet")
+        print(f" [ENDPOINT] Data not loaded yet")
         return {"error": "Data not loaded", "status": "loading"}
     
     total_items = len(profiles)
@@ -82,7 +82,7 @@ def root():
         "business_intelligence": "enabled",
         "enhanced_predictions": "active"
     }
-    print(f"✅ [ENDPOINT] Returning root response: {response}")
+    print(f" [ENDPOINT] Returning root response: {response}")
     return response
 
 # Data format endpoint - shows expected Excel format
@@ -154,33 +154,52 @@ def get_data_format():
 # Upload monthly data endpoint
 @app.post("/upload_monthly_data")
 async def upload_monthly_data(
-    file: bytes,
-    year: int,
-    month: int,
-    category: str
+    file: UploadFile = File(...),
+    year: int = Form(...),
+    month: int = Form(...),
+    category: str = Form(...)
 ):
     """Upload monthly sales data for a specific year, month, and category"""
     try:
-        import io
-        from pathlib import Path
+        print(f"\n [UPLOAD] Received upload request")
+        print(f"   File: {file.filename}")
+        print(f"   Year: {year}, Month: {month}, Category: {category}")
         
         # Validate inputs
         if year not in [2024, 2025, 2026]:
-            return {"error": "Year must be 2024, 2025, or 2026"}
+            error_msg = f"Year must be 2024, 2025, or 2026, got {year}"
+            print(f" {error_msg}")
+            return {"error": error_msg}
         
         if month < 1 or month > 12:
-            return {"error": "Month must be between 1 and 12"}
+            error_msg = f"Month must be between 1 and 12, got {month}"
+            print(f" {error_msg}")
+            return {"error": error_msg}
         
         if category not in ["Grocery", "Liquor"]:
-            return {"error": "Category must be 'Grocery' or 'Liquor'"}
+            error_msg = f"Category must be 'Grocery' or 'Liquor', got {category}"
+            print(f" {error_msg}")
+            return {"error": error_msg}
+        
+        # Read file content
+        file_content = await file.read()
+        print(f"   File size: {len(file_content)} bytes")
         
         # Create target directory
         base_path = Path("../../inventory_model/data/Datatype_02_secondary/CSD SALE")
         if not base_path.exists():
             base_path = Path("inventory_model/data/Datatype_02_secondary/CSD SALE")
         
+        # Verify base path exists
+        if not base_path.exists():
+            print(f"    Base path doesn't exist, creating: {base_path}")
+            base_path.mkdir(parents=True, exist_ok=True)
+        
         target_dir = base_path / str(year) / f"{category} {year}"
         target_dir.mkdir(parents=True, exist_ok=True)
+        print(f"   Target dir: {target_dir}")
+        print(f"   Base path exists: {base_path.exists()}")
+        print(f"   Target dir exists: {target_dir.exists()}")
         
         # Generate filename
         month_names = ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
@@ -189,11 +208,15 @@ async def upload_monthly_data(
         
         # Save file
         with open(target_file, 'wb') as f:
-            f.write(file)
+            f.write(file_content)
         
         # Verify file was saved
         if not target_file.exists():
-            return {"error": "Failed to save file"}
+            error_msg = "Failed to save file"
+            print(f" {error_msg}")
+            return {"error": error_msg}
+        
+        print(f" File uploaded successfully: {target_file}")
         
         return {
             "success": True,
@@ -207,10 +230,11 @@ async def upload_monthly_data(
         }
         
     except Exception as e:
-        print(f"Error uploading file: {e}")
+        error_msg = f"Error uploading file: {str(e)}"
+        print(f" {error_msg}")
         import traceback
         traceback.print_exc()
-        return {"error": str(e)}
+        return {"error": error_msg}
 
 # Update current stock endpoint
 @app.post("/update_stock")
@@ -253,13 +277,15 @@ def retrain_model():
     try:
         global analyzer, enhanced_predictor, profiles
         
-        print("🔄 Starting model retraining...")
+        print("\n" + "="*60)
+        print(" STARTING MODEL RETRAINING...")
+        print("="*60)
         
         # Reload data
         analyzer = InventoryAnalyzer()
         enhanced_predictor = EnhancedPredictor()
         
-        print("🔄 Loading and analyzing data...")
+        print(" Loading and analyzing data...")
         profiles = analyzer.load_and_process_data()
         
         if profiles:
@@ -268,8 +294,15 @@ def retrain_model():
             
             total_items = len(profiles)
             critical_items = sum(1 for p in profiles.values() if p['stock_status'] == 'CRITICAL')
+            grocery_items = sum(1 for p in profiles.values() if p['category'] == 'Grocery')
+            liquor_items = sum(1 for p in profiles.values() if p['category'] == 'Liquor')
             
-            print(f"✅ Model retrained successfully with {total_items} items")
+            print(f"\n MODEL RETRAINED SUCCESSFULLY!")
+            print(f"    Total Items: {total_items}")
+            print(f"    Grocery Items: {grocery_items}")
+            print(f"    Liquor Items: {liquor_items}")
+            print(f"    Critical Items: {critical_items}")
+            print("="*60 + "\n")
             
             return {
                 "success": True,
@@ -277,18 +310,21 @@ def retrain_model():
                 "statistics": {
                     "total_items": total_items,
                     "critical_items": critical_items,
-                    "grocery_items": sum(1 for p in profiles.values() if p['category'] == 'Grocery'),
-                    "liquor_items": sum(1 for p in profiles.values() if p['category'] == 'Liquor')
+                    "grocery_items": grocery_items,
+                    "liquor_items": liquor_items
                 },
                 "note": "All predictions will now use the updated data"
             }
         else:
+            print(" RETRAINING FAILED - No profiles loaded")
+            print("="*60 + "\n")
             return {"error": "Failed to load data during retraining"}
             
     except Exception as e:
-        print(f"Error retraining model: {e}")
+        print(f" Error retraining model: {e}")
         import traceback
         traceback.print_exc()
+        print("="*60 + "\n")
         return {"error": str(e)}
 
 # Health check endpoint
@@ -298,24 +334,122 @@ def health_check():
         return {"status": "loading", "message": "Data still loading..."}
     return {"status": "ready", "message": "API ready for predictions"}
 
+# Check uploaded files endpoint
+@app.get("/check_files")
+def check_files():
+    """Check what files are currently in the data directory"""
+    try:
+        base_path = Path("../../inventory_model/data/Datatype_02_secondary/CSD SALE")
+        if not base_path.exists():
+            base_path = Path("inventory_model/data/Datatype_02_secondary/CSD SALE")
+        
+        files_found = {}
+        
+        if base_path.exists():
+            for year_folder in base_path.iterdir():
+                if year_folder.is_dir():
+                    year = year_folder.name
+                    files_found[year] = {}
+                    
+                    for category_folder in year_folder.iterdir():
+                        if category_folder.is_dir():
+                            category = category_folder.name
+                            excel_files = list(category_folder.glob("*.xls")) + list(category_folder.glob("*.xlsx"))
+                            files_found[year][category] = [f.name for f in excel_files]
+        
+        return {
+            "base_path": str(base_path),
+            "exists": base_path.exists(),
+            "files": files_found,
+            "total_files": sum(len(files) for year_files in files_found.values() for files in year_files.values())
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 # Stores endpoint - single store model
 @app.get("/stores")
 def get_stores():
-    print(f"🔍 [ENDPOINT] GET /stores - Stores endpoint called")
+    print(f" [ENDPOINT] GET /stores - Stores endpoint called")
     response = {
         "stores": ["MY_STORE"],
         "model": "business_focused",
         "note": "Single store model based on your actual sales data"
     }
-    print(f"✅ [ENDPOINT] Returning stores: {response}")
+    print(f" [ENDPOINT] Returning stores: {response}")
     return response
 
 # Items endpoint with business intelligence
 @app.get("/items")
 def get_items():
-    print(f"🔍 [ENDPOINT] GET /items - Items endpoint called")
+    print(f" [ENDPOINT] GET /items - Items endpoint called")
     if not profiles:
-        print(f"⚠️ [ENDPOINT] Data not loaded yet")
+        print(f" [ENDPOINT] Data not loaded yet")
+        return {"error": "Data not loaded"}
+    
+    grocery_items = [(name, profile) for name, profile in profiles.items() if profile['category'] == 'Grocery']
+    liquor_items = [(name, profile) for name, profile in profiles.items() if profile['category'] == 'Liquor']
+    
+    # Sort by sales volume
+    grocery_items.sort(key=lambda x: x[1]['total_sold'], reverse=True)
+    liquor_items.sort(key=lambda x: x[1]['total_sold'], reverse=True)
+    
+    response = {
+        "grocery": {
+            "items": [item[0] for item in grocery_items[:50]],
+            "total": len(grocery_items),
+            "category": "Grocery", 
+            "top_seller": grocery_items[0][0] if grocery_items else "N/A"
+        },
+        "liquor": {
+            "items": [item[0] for item in liquor_items[:50]],
+            "total": len(liquor_items),
+            "category": "Liquor", 
+            "top_seller": liquor_items[0][0] if liquor_items else "N/A"
+        },
+        "summary": {
+            "total_items": len(profiles),
+            "data_months": 12,
+            "analysis_type": "consumption_based"
+        }
+    }
+    print(f" [ENDPOINT] Returning {len(profiles)} items (Grocery: {len(grocery_items)}, Liquor: {len(liquor_items)})")
+    return response
+
+# All items endpoint with detailed information
+@app.get("/all_items")
+def get_all_items():
+    """Get all items with detailed information"""
+    print(f" [ENDPOINT] GET /all_items - All items endpoint called")
+    if not profiles:
+        return {"error": "Data not loaded", "items": []}
+    
+    items_list = []
+    for item_name, profile in profiles.items():
+        items_list.append({
+            "item_name": item_name,
+            "category": profile['category'],
+            "total_sold": int(profile['total_sold']),
+            "revenue": float(profile['revenue_potential']),
+            "avg_price": float(profile['avg_price']),
+            "current_stock": int(profile['current_stock']),
+            "stock_status": profile['stock_status'],
+            "avg_monthly_sales": float(profile['avg_monthly_sales']),
+            "stock_velocity": float(profile['stock_velocity']),
+            "sales_trend": profile['sales_trend']
+        })
+    
+    # Sort by total sold
+    items_list.sort(key=lambda x: x['total_sold'], reverse=True)
+    
+    print(f" [ENDPOINT] Returning {len(items_list)} items with details")
+    return {"items": items_list, "total": len(items_list)}
+
+# Items endpoint with business intelligence
+@app.get("/items")
+def get_items():
+    print(f" [ENDPOINT] GET /items - Items endpoint called")
+    if not profiles:
+        print(f" [ENDPOINT] Data not loaded yet")
         return {"error": "Data not loaded"}
     
     grocery_items = [(name, profile) for name, profile in profiles.items() if profile['category'] == 'Grocery']
@@ -344,7 +478,7 @@ def get_items():
             "analysis_type": "consumption_based"
         }
     }
-    print(f"✅ [ENDPOINT] Returning {len(profiles)} items (Grocery: {len(grocery_items)}, Liquor: {len(liquor_items)})")
+    print(f" [ENDPOINT] Returning {len(profiles)} items (Grocery: {len(grocery_items)}, Liquor: {len(liquor_items)})")
     return response
 
 # Business intelligence endpoint
@@ -363,23 +497,23 @@ def get_business_intelligence():
 def _generate_situation_summary(status, current_stock, demand, shortage):
     """Generate situation summary"""
     if status == "CRITICAL":
-        return f"🚨 URGENT: Only {int(current_stock)} units left but need {int(demand)} units. Short by {int(shortage)} units!"
+        return f" URGENT: Only {int(current_stock)} units left but need {int(demand)} units. Short by {int(shortage)} units!"
     elif status == "LOW":
-        return f"⚠️ Running Low: Have {int(current_stock)} units, need {int(demand)} units. Short by {int(shortage)} units."
+        return f" Running Low: Have {int(current_stock)} units, need {int(demand)} units. Short by {int(shortage)} units."
     elif status == "ADEQUATE":
-        return f"✅ Adequate: Have {int(current_stock)} units, need {int(demand)} units. Sufficient stock."
+        return f" Adequate: Have {int(current_stock)} units, need {int(demand)} units. Sufficient stock."
     else:
-        return f"📦 Excess: Have {int(current_stock)} units, need only {int(demand)} units. Too much stock."
+        return f" Excess: Have {int(current_stock)} units, need only {int(demand)} units. Too much stock."
 
 def _generate_action_summary(status, order_qty, investment):
     """Generate action summary"""
     if status == "CRITICAL":
-        return f"Order {int(order_qty)} units TODAY (Cost: ₹{investment:,.2f}). Don't delay!"
+        return f"Order {int(order_qty)} units TODAY (Cost: {investment:,.2f}). Don't delay!"
     elif status == "LOW":
-        return f"Order {int(order_qty)} units this week (Cost: ₹{investment:,.2f})"
+        return f"Order {int(order_qty)} units this week (Cost: {investment:,.2f})"
     elif status == "ADEQUATE":
         if order_qty > 0:
-            return f"Consider ordering {int(order_qty)} units (Cost: ₹{investment:,.2f})"
+            return f"Consider ordering {int(order_qty)} units (Cost: {investment:,.2f})"
         else:
             return "No order needed right now. Monitor stock levels."
     else:
@@ -391,9 +525,9 @@ def _generate_impact_summary(revenue, risk, confidence):
     reliability = "Very Reliable" if conf_num >= 85 else "Reliable" if conf_num >= 70 else "Use Caution"
     
     if risk > 0:
-        return f"💰 Revenue: ₹{revenue:,.2f} | ⚠️ Risk: ₹{risk:,.2f} if out of stock | {reliability} ({confidence})"
+        return f" Revenue: {revenue:,.2f} |  Risk: {risk:,.2f} if out of stock | {reliability} ({confidence})"
     else:
-        return f"💰 Revenue: ₹{revenue:,.2f} | {reliability} ({confidence})"
+        return f" Revenue: {revenue:,.2f} | {reliability} ({confidence})"
 
 def _get_urgency_level(status):
     """Get urgency level"""
@@ -639,7 +773,7 @@ def bulk_predict(data: dict):
                 "excess_stock": sum(1 for p in predictions if p['status'] == 'EXCESS'),
                 "total_order_value": round(total_order_value, 2),
                 "total_revenue_at_risk": round(total_revenue_at_risk, 2),
-                "currency": "₹",
+                "currency": "",
                 "analysis_quality": "enhanced",
                 "data_source": "actual_sales_2024_2025",
                 "prediction_factors": ["seasonality", "growth", "business_patterns", "stock_velocity"]
@@ -671,28 +805,43 @@ def history(store_id: str, item_name: str):
         
         profile = profiles[item_name_clean]
         
-        # Generate historical data based on actual profile
+        # Return actual monthly sales history from profile
         history_data = []
-        base_monthly = profile['avg_monthly_sales']
         
-        # Generate 12 months of history
-        for i in range(12):
-            date = datetime.now() - timedelta(days=30*i)
-            monthly_sales = base_monthly * np.random.uniform(0.7, 1.3)
+        if 'monthly_sales_history' in profile and profile['monthly_sales_history']:
+            # Use actual historical data from profile
+            for hist in profile['monthly_sales_history']:
+                history_data.append({
+                    "date": hist['date'],
+                    "units_sold_7d": round(hist['sales'] / 4, 2),  # Convert monthly to weekly
+                    "revenue": round(hist['revenue'], 2) if 'revenue' in hist else round(hist['sales'] * profile['avg_price'], 2),
+                    "predicted": round(hist['sales'] / 4, 2),
+                    "inventory_level": round(profile['current_stock'], 0),
+                    "price": round(profile['avg_price'], 2)
+                })
+        else:
+            # Fallback: Generate based on average if no history available
+            base_monthly = profile['avg_monthly_sales']
             
-            # Convert to weekly for consistency
-            weekly_sales = monthly_sales / 4
-            
-            history_data.append({
-                "date": date.strftime('%Y-%m-%d'),
-                "units_sold_7d": round(weekly_sales, 2),
-                "predicted": round(weekly_sales * np.random.uniform(0.9, 1.1), 2),
-                "inventory_level": round(profile['current_stock'] * np.random.uniform(0.8, 1.2), 0),
-                "price": round(profile['avg_price'], 2),
-                "discount": round(np.random.uniform(0, 10), 2)
-            })
+            # Generate 12 months of history
+            for i in range(12):
+                date = datetime.now() - timedelta(days=30*i)
+                monthly_sales = base_monthly * np.random.uniform(0.7, 1.3)
+                
+                history_data.append({
+                    "date": date.strftime('%Y-%m-%d'),
+                    "units_sold_7d": round(monthly_sales / 4, 2),
+                    "revenue": round(monthly_sales * profile['avg_price'], 2),
+                    "predicted": round(monthly_sales / 4, 2),
+                    "inventory_level": round(profile['current_stock'], 0),
+                    "price": round(profile['avg_price'], 2)
+                })
         
-        return sorted(history_data, key=lambda x: x['date'])
+        return {
+            "item_name": item_name_clean,
+            "category": profile['category'],
+            "history": sorted(history_data, key=lambda x: x['date'], reverse=True)
+        }
         
     except Exception as e:
         return {"error": str(e)}

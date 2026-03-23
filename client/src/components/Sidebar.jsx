@@ -4,12 +4,8 @@ const Sidebar = ({ activeView, setActiveView }) => {
   const menuItems = [
     { id: "dashboard", icon: "📊", label: "Dashboard" },
     { id: "bulk", icon: "📋", label: "Bulk Orders" },
-    { id: "prediction", icon: "🎯", label: "Smart Prediction" },
-    { id: "forecast", icon: "📈", label: "Forecast" },
+    { id: "database", icon: "🗄️", label: "Database" },
     { id: "upload", icon: "📤", label: "Upload Data" },
-    { id: "inventory", icon: "📦", label: "Inventory" },
-    { id: "analytics", icon: "📉", label: "Analytics" },
-    { id: "settings", icon: "⚙️", label: "Settings" },
   ];
 
   return (

@@ -25,9 +25,27 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 const ForecastChart = ({ data }) => {
+  // Ensure data is always an array
+  const chartData = Array.isArray(data) ? data : [];
+  
+  if (chartData.length === 0) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '300px',
+        color: '#94a3b8',
+        fontSize: '14px'
+      }}>
+        No forecast data available
+      </div>
+    );
+  }
+
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <AreaChart data={data}>
+      <AreaChart data={chartData}>
         <defs>
           <linearGradient id="colorDemand" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>

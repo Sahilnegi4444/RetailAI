@@ -47,6 +47,49 @@ const downloadCSV = (csv, filename) => {
   document.body.removeChild(link);
 };
 
+// Helper function to calculate consistent predictions
+const calculateMonthlyPrediction = (product, predictionDate) => {
+  const predictionMonth = new Date(predictionDate).getMonth();
+  const baseMonthly = product.business_metrics?.avg_monthly_sales || product.predicted_demand || 50;
+  const trendFactor = product.business_metrics?.sales_trend === 'increasing' ? 1.05 : 
+                     product.business_metrics?.sales_trend === 'decreasing' ? 0.95 : 1.0;
+  
+  let monthlySeasonalFactor = 1;
+  let hasHistoricalData = false;
+  
+  if (product.last_4_weeks && product.last_4_weeks.length > 0) {
+    const historicalMonth = product.last_4_weeks.find(h => {
+      const hDate = new Date(h.date);
+      return hDate.getMonth() === predictionMonth;
+    });
+    
+    if (historicalMonth && historicalMonth.actual > 0) {
+      hasHistoricalData = true;
+      monthlySeasonalFactor = historicalMonth.actual / baseMonthly;
+      monthlySeasonalFactor = Math.max(0.1, Math.min(2.0, monthlySeasonalFactor));
+    }
+  }
+  
+  if (!hasHistoricalData) {
+    const hasAnySales = product.last_4_weeks && product.last_4_weeks.some(h => h.actual > 0);
+    if (hasAnySales) {
+      monthlySeasonalFactor = 0;
+    } else {
+      if ([9, 10, 11].includes(predictionMonth)) monthlySeasonalFactor = 1.2;
+      else if ([5, 6, 7].includes(predictionMonth)) monthlySeasonalFactor = 0.8;
+    }
+  }
+  
+  let predictedSales;
+  if (monthlySeasonalFactor === 0) {
+    predictedSales = 0;
+  } else {
+    predictedSales = Math.round(baseMonthly * monthlySeasonalFactor * trendFactor);
+  }
+  
+  return Math.max(0, predictedSales);
+};
+
 const BulkPrediction = () => {
   // Export filter states
   const [showExportModal, setShowExportModal] = useState(false);
@@ -73,6 +116,8 @@ const BulkPrediction = () => {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [availableCategories, setAvailableCategories] = useState([]);
   const [isSingleStore, setIsSingleStore] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(""); // Add search state
+  const [categoryFilter, setCategoryFilter] = useState("all"); // Add category filter state
 
   useEffect(() => {
     loadStores();
@@ -530,6 +575,49 @@ const BulkPrediction = () => {
               </div>
             </div>
 
+            {/* Search and Filter Section */}
+            <div className="search-filter-section">
+              <div className="search-box">
+                <input
+                  type="text"
+                  placeholder="🔍 Search by product name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="search-input"
+                />
+              </div>
+              
+              <div className="filter-controls">
+                <div className="filter-group">
+                  <label>Category:</label>
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="filter-select"
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="Grocery">Grocery Only</option>
+                    <option value="Liquor">Liquor Only</option>
+                  </select>
+                </div>
+                
+                <div className="filter-group">
+                  <label>Status:</label>
+                  <select
+                    value={exportFilters.status}
+                    onChange={(e) => setExportFilters({...exportFilters, status: e.target.value})}
+                    className="filter-select"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="CRITICAL">Critical Only</option>
+                    <option value="LOW">Low Only</option>
+                    <option value="ADEQUATE">Adequate Only</option>
+                    <option value="EXCESS">Excess Only</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             <div className="table-wrapper">
               <table className="products-table">
                 <thead>
@@ -564,7 +652,24 @@ const BulkPrediction = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {result.predictions.map((product, index) => (
+                  {result.predictions
+                    .filter(product => {
+                      // Search filter
+                      const matchesSearch = !searchQuery || 
+                        (product.item_name && product.item_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (product.product_id && product.product_id.toLowerCase().includes(searchQuery.toLowerCase()));
+                      
+                      // Category filter
+                      const matchesCategory = categoryFilter === "all" || 
+                        (product.category && product.category.toLowerCase() === categoryFilter.toLowerCase());
+                      
+                      // Status filter
+                      const matchesStatus = exportFilters.status === "all" || 
+                        product.status === exportFilters.status;
+                      
+                      return matchesSearch && matchesCategory && matchesStatus;
+                    })
+                    .map((product, index) => (
                     <React.Fragment key={product.product_id || product.item_name || index}>
                       <tr
                         className={`product-row ${
@@ -616,7 +721,7 @@ const BulkPrediction = () => {
                             <div className="expanded-content">
                               
                               {/* Quick Summary Section */}
-                              <div className="quick-summary-section">
+                              {/* <div className="quick-summary-section">
                                 <h3>📋 Quick Summary</h3>
                                 <div className="summary-grid-expanded">
                                   <div className="summary-box situation">
@@ -673,7 +778,7 @@ const BulkPrediction = () => {
                                     </p>
                                   </div>
                                 </div>
-                              </div>
+                              </div> */}
 
                               {/* NEW: Enhanced Prediction Explanation */}
                               {product.prediction_factors && (
@@ -913,21 +1018,21 @@ const BulkPrediction = () => {
                                         <span>Conservative</span>
                                         <strong>
                                           {product.demand_breakdown?.monthly?.low || 
-                                           (product.predicted_demand * 0.8).toFixed(2)}
+                                           (calculateMonthlyPrediction(product, predictionDate) * 0.8).toFixed(2)}
                                         </strong>
                                       </div>
                                       <div className="proj-value highlight main-value">
                                         <span>Expected</span>
                                         <strong>
                                           {product.demand_breakdown?.monthly?.average || 
-                                           product.predicted_demand}
+                                           calculateMonthlyPrediction(product, predictionDate)}
                                         </strong>
                                       </div>
                                       <div className="proj-value">
                                         <span>Optimistic</span>
                                         <strong>
                                           {product.demand_breakdown?.monthly?.high || 
-                                           (product.predicted_demand * 1.2).toFixed(2)}
+                                           (calculateMonthlyPrediction(product, predictionDate) * 1.2).toFixed(2)}
                                         </strong>
                                       </div>
                                     </div>
@@ -1310,22 +1415,23 @@ const BulkPrediction = () => {
                                           
                                           {/* Future Trend Prediction */}
                                           <div className="future-trend-section">
-                                            <h6>🔮 Future Trend Prediction (Next 6 Months)</h6>
+                                            <h6>Future Trend Prediction (Next 6 Months)</h6>
                                             <div className="trend-prediction-grid">
                                               {(() => {
-                                                const currentMonth = new Date().getMonth();
+                                                const targetDate = new Date(predictionDate);
                                                 const futureMonths = [];
                                                 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                                                 
-                                                // Use ACTUAL historical data for predictions
-                                                const baseMonthly = product.business_metrics?.avg_monthly_sales || 50;
-                                                const seasonalFactor = product.business_metrics?.seasonal_factor || 1;
+                                                // Use the same calculation method as Prediction Analysis
+                                                const baseMonthly = product.business_metrics?.avg_monthly_sales || product.predicted_demand || 50;
                                                 const trendFactor = product.business_metrics?.sales_trend === 'increasing' ? 1.05 : 
                                                                    product.business_metrics?.sales_trend === 'decreasing' ? 0.95 : 1.0;
                                                 
                                                 for (let i = 1; i <= 6; i++) {
-                                                  const monthIndex = (currentMonth + i) % 12;
-                                                  const year = currentMonth + i >= 12 ? 2027 : 2026;
+                                                  const futureDate = new Date(targetDate);
+                                                  futureDate.setMonth(futureDate.getMonth() + i);
+                                                  const monthIndex = futureDate.getMonth();
+                                                  const year = futureDate.getFullYear();
                                                   
                                                   // Use actual seasonal pattern if available
                                                   let monthlySeasonalFactor = 1;
@@ -1360,7 +1466,7 @@ const BulkPrediction = () => {
                                                     }
                                                   }
                                                   
-                                                  // Calculate realistic prediction
+                                                  // Calculate realistic prediction using same method as Prediction Analysis
                                                   let predictedSales;
                                                   if (monthlySeasonalFactor === 0) {
                                                     predictedSales = 0; // Zero for non-seasonal months
@@ -1393,8 +1499,8 @@ const BulkPrediction = () => {
                                                       {future.predicted === 0 && <span className="future-units seasonal-note">(Seasonal)</span>}
                                                     </div>
                                                     <div className="future-trend">
-                                                      {future.predicted === 0 ? '🚫' : 
-                                                       future.predicted > baseMonthly ? '📈' : 
+                                                      {future.predicted === 0 ? '�' : 
+                                                       future.predicted > baseMonthly ? '�' : 
                                                        future.predicted < baseMonthly ? '📉' : '➡️'}
                                                     </div>
                                                   </div>
