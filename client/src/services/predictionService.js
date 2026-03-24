@@ -3,10 +3,10 @@
  */
 
 // Use relative path for API calls (proxied through nginx)
-// In Docker: /api/ → nginx → backend:8003
-// In local dev: http://localhost:8003
+// In Docker: /api/ → nginx → backend:8001
+// In local dev: http://localhost:8001
 const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-  ? 'http://localhost:8003' 
+  ? 'http://localhost:8001' 
   : '/api';
 
 console.log('[PREDICTION SERVICE] API Base URL:', API_BASE_URL);

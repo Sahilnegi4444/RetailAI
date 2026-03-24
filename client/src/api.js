@@ -1,10 +1,10 @@
 import axios from "axios";
 
 // API Configuration
-// For local development: http://localhost:8003 (Production API)
+// For local development: http://localhost:8001 (Production API)
 // For Docker/Nginx: /api (proxies to backend)
 const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-  ? 'http://localhost:8003'
+  ? 'http://localhost:8001'
   : '/api';
 
 console.log("🔧 [API CONFIG] Base URL:", API_BASE_URL);
