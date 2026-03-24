@@ -1,0 +1,146 @@
+.product-row {
+  position: relative;
+}
+
+.product-row.critical {
+  border-left: 3px solid #ef4444;
+}
+
+.product-row.low {
+  border-left: 3px solid #f59e0b;
+}
+
+.product-row.adequate {
+  border-left: 3px solid #10b981;
+}
+
+.status-indicator {
+  font-size: 1.25rem;
+  display: inline-block;
+}
+
+.product-name {
+  font-weight: 600;
+  color: #fff;
+}
+
+.category-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.category-badge.grocery {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.category-badge.liquor {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.stock-value,
+.demand-value {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.trend-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.trend-badge.increasing {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.trend-badge.stable {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.trend-badge.decreasing {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.order-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.order-badge.urgent,
+.order-badge.high {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.order-badge.medium {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fcd34d;
+}
+
+.order-badge.low,
+.order-badge.none {
+  background: rgba(100, 116, 139, 0.2);
+  color: #cbd5e1;
+}
+
+.confidence-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.confidence-badge.very-high,
+.confidence-badge.high {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.confidence-badge.medium {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.confidence-badge.low,
+.confidence-badge.very-low {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fcd34d;
+}
+
+.expand-btn {
+  padding: 0.5rem 0.75rem;
+  background: #334155;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.expand-btn:hover {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.expanded-row {
+  background: #0f172a !important;
+}
+
+.expanded-row td {
+  padding: 0 !important;
+}

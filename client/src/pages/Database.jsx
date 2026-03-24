@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import LoadingSpinner from "../components/LoadingSpinner";
-import ItemDetails from "./ItemDetails";
 import "./Database.css";
 
 const Database = () => {
@@ -12,7 +11,6 @@ const Database = () => {
   const [viewMode, setViewMode] = useState("overview"); // overview, all-items, top-sellers
   const [allItems, setAllItems] = useState([]);
   const [topSellers, setTopSellers] = useState({ grocery: [], liquor: [] });
-  const [selectedItem, setSelectedItem] = useState(null); // For modal
 
   useEffect(() => {
     loadDatabaseInfo();
@@ -21,15 +19,17 @@ const Database = () => {
   const loadDatabaseInfo = async () => {
     try {
       setLoading(true);
-      const response = await fetch("http://localhost:8001/");
+      const baseURL = "http://localhost:8003";
+      
+      const response = await fetch(`${baseURL}/`);
       const info = await response.json();
       
       // Fetch items data
-      const itemsResponse = await fetch("http://localhost:8001/items");
+      const itemsResponse = await fetch(`${baseURL}/items`);
       const itemsData = await itemsResponse.json();
       
       // Fetch all items with details
-      const allItemsResponse = await fetch("http://localhost:8001/all_items");
+      const allItemsResponse = await fetch(`${baseURL}/all_items`);
       let allItemsList = [];
       if (allItemsResponse.ok) {
         const allItemsData = await allItemsResponse.json();
@@ -302,7 +302,7 @@ const Database = () => {
                     </thead>
                     <tbody>
                       {topSellers.grocery.map((item, idx) => (
-                        <tr key={idx} onClick={() => setSelectedItem(item.item_name)} style={{cursor: 'pointer'}}>
+                        <tr key={idx}>
                           <td className="rank">#{idx + 1}</td>
                           <td className="product-name">{item.item_name}</td>
                           <td className="units">{item.total_sold?.toLocaleString() || 0}</td>
@@ -337,7 +337,7 @@ const Database = () => {
                     </thead>
                     <tbody>
                       {topSellers.liquor.map((item, idx) => (
-                        <tr key={idx} onClick={() => setSelectedItem(item.item_name)} style={{cursor: 'pointer'}}>
+                        <tr key={idx}>
                           <td className="rank">#{idx + 1}</td>
                           <td className="product-name">{item.item_name}</td>
                           <td className="units">{item.total_sold?.toLocaleString() || 0}</td>
@@ -389,7 +389,7 @@ const Database = () => {
                 </thead>
                 <tbody>
                   {getFilteredItems().map((item, idx) => (
-                    <tr key={idx} onClick={() => setSelectedItem(item.item_name)} style={{cursor: 'pointer'}}>
+                    <tr key={idx}>
                       <td className="product-name">{item.item_name}</td>
                       <td className="category">{item.category}</td>
                       <td className="units">{item.total_sold?.toLocaleString() || 0}</td>
@@ -582,14 +582,6 @@ const Database = () => {
           </div>
         </div>
       </div>
-
-      {/* Item Details Modal */}
-      {selectedItem && (
-        <ItemDetails 
-          itemName={selectedItem} 
-          onClose={() => setSelectedItem(null)} 
-        />
-      )}
     </div>
   );
 };

@@ -44,11 +44,11 @@ const DataUpload = () => {
   const checkModelHealth = async () => {
     setCheckingHealth(true);
     try {
-      const response = await fetch("http://localhost:8001/health");
+      const response = await fetch("http://localhost:8003/health");
       const data = await response.json();
       setModelHealth({
         status: data.status,
-        message: data.message,
+        message: data.hybrid_system ? "Model API is ready" : "Model API not responding",
         timestamp: new Date().toLocaleTimeString(),
         isHealthy: data.status === "ready"
       });
@@ -66,10 +66,10 @@ const DataUpload = () => {
 
   const checkUploadedFiles = async () => {
     try {
-      const response = await fetch("http://localhost:8001/check_files");
+      const response = await fetch("http://localhost:8003/data-preview?limit=10");
       const data = await response.json();
       console.log("📁 Files in data directory:", data);
-      alert(`Files found:\n\n${JSON.stringify(data.files, null, 2)}\n\nTotal: ${data.total_files} files`);
+      alert(`Data Preview:\n\nTotal Records: ${data.total || 0}\n\nColumns: ${data.columns?.join(', ') || 'N/A'}\n\nSample records loaded successfully`);
     } catch (error) {
       console.error("Error checking files:", error);
       alert("Error checking files. Check console for details.");

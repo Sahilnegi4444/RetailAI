@@ -68,8 +68,8 @@ const Dashboard = () => {
         if (data.grocery && data.liquor) {
           // Combine grocery and liquor items for dropdown
           const allItems = [
-            ...data.grocery.items.slice(0, 20), // First 20 grocery items
-            ...data.liquor.items.slice(0, 10)   // First 10 liquor items
+            ...(Array.isArray(data.grocery) ? data.grocery : data.grocery.items || []).slice(0, 20),
+            ...(Array.isArray(data.liquor) ? data.liquor : data.liquor.items || []).slice(0, 10)
           ];
           console.log("✅ [DASHBOARD] Combined items:", allItems.length);
           setProducts(allItems);
@@ -146,7 +146,11 @@ const Dashboard = () => {
   const avgError = history.length
     ? Math.round(
         history.reduce(
-          (sum, d) => sum + Math.abs(d.units_sold_7d - d.predicted),
+          (sum, d) => {
+            const actual = parseFloat(d.units_sold_7d) || 0;
+            const predicted = parseFloat(d.predicted) || 0;
+            return sum + Math.abs(actual - predicted);
+          },
           0
         ) / history.length
       )
@@ -156,14 +160,23 @@ const Dashboard = () => {
     ? Math.round(
         (1 -
           history.reduce(
-            (sum, d) => sum + Math.abs(d.units_sold_7d - d.predicted) / d.units_sold_7d,
+            (sum, d) => {
+              const actual = parseFloat(d.units_sold_7d) || 0;
+              const predicted = parseFloat(d.predicted) || 0;
+              return actual > 0 ? sum + Math.abs(actual - predicted) / actual : sum;
+            },
             0
           ) / history.length) *
           100
       )
     : 0;
 
-  const totalDemand = forecast.reduce((sum, f) => sum + f.expected_demand, 0);
+  // Calculate total demand from forecast
+  // Backend returns: final_prediction, xgb_prediction, prophet_prediction
+  const totalDemand = forecast.reduce((sum, f) => {
+    const demand = parseFloat(f.final_prediction) || parseFloat(f.xgb_prediction) || parseFloat(f.expected_demand) || 0;
+    return sum + (isNaN(demand) ? 0 : demand);
+  }, 0);
 
   if (error) {
     return <ErrorMessage message={error} onRetry={loadData} />;
