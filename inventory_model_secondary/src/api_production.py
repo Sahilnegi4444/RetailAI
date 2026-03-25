@@ -37,8 +37,28 @@ print(f"[CONFIG] Host: {HOST}, Port: {PORT}")
 try:
     hybrid = HybridActiveSystem()
     print("[INIT] Hybrid system loaded")
+except FileNotFoundError as e:
+    print(f"[WARN] Model files not found: {e}")
+    print("[INIT] Training models from database...")
+    try:
+        trainer = MLTrainerFromDB()
+        success = trainer.train()
+        if success:
+            print("[INIT] Models trained successfully, loading hybrid system...")
+            hybrid = HybridActiveSystem()
+            print("[INIT] Hybrid system loaded")
+        else:
+            print("[ERROR] Model training failed")
+            hybrid = None
+    except Exception as train_err:
+        print(f"[ERROR] Failed to train models: {train_err}")
+        import traceback
+        traceback.print_exc()
+        hybrid = None
 except Exception as e:
     print(f"[ERROR] Failed to load hybrid system: {e}")
+    import traceback
+    traceback.print_exc()
     hybrid = None
 
 db = DatabaseManager()
@@ -249,7 +269,11 @@ def retrain_model():
 async def generate_predictions(request: PredictRequest = None):
     """Generate predictions with trend adjustments and explainability"""
     try:
+        print(f"\n[PREDICT] Request received: {request}")
+        print(f"[PREDICT] Request type: {type(request)}")
+        
         if hybrid is None:
+            print("[PREDICT] ERROR: Hybrid system not loaded")
             return JSONResponse(
                 status_code=400,
                 content={"error": "Hybrid system not loaded"}
@@ -258,20 +282,25 @@ async def generate_predictions(request: PredictRequest = None):
         prediction_date = None
         if request and hasattr(request, 'prediction_date'):
             prediction_date = request.prediction_date
+            print(f"[PREDICT] Got prediction_date from request: {prediction_date}")
         
         if prediction_date is None:
             prediction_date = datetime.now().strftime("%Y-%m-%d")
+            print(f"[PREDICT] Using current date: {prediction_date}")
         
-        print(f"\n[PREDICT] Generating predictions for {prediction_date}")
+        print(f"[PREDICT] Generating predictions for {prediction_date}")
         
         # Get base predictions from hybrid system
         result = hybrid.predict_for_date(prediction_date)
         
         if result is None:
+            print("[PREDICT] ERROR: Failed to generate predictions")
             return JSONResponse(
                 status_code=400,
                 content={"error": "Failed to generate predictions"}
             )
+        
+        print(f"[PREDICT] Got {len(result.get('predictions', []))} predictions")
         
         # Extract target month
         try:

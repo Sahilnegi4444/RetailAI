@@ -15,19 +15,36 @@ export const predictionService = {
    */
   async getBulkPredictions(predictionDate) {
     try {
-      const response = await fetch(`${API_BASE_URL}/predict`, {
+      const url = `${API_BASE_URL}/predict`;
+      const body = { prediction_date: predictionDate };
+      
+      console.log('[PREDICTION SERVICE] Calling:', url);
+      console.log('[PREDICTION SERVICE] Body:', body);
+      console.log('[PREDICTION SERVICE] Full URL:', window.location.origin + url);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prediction_date: predictionDate }),
+        body: JSON.stringify(body),
+      });
+
+      console.log('[PREDICTION SERVICE] Response status:', response.status);
+      console.log('[PREDICTION SERVICE] Response headers:', {
+        'content-type': response.headers.get('content-type'),
+        'x-proxy-by': response.headers.get('x-proxy-by'),
+        'x-backend-server': response.headers.get('x-backend-server'),
       });
 
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('[PREDICTION SERVICE] Error response:', errorText);
+        throw new Error(`API Error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('[PREDICTION SERVICE] Success:', data);
       return data;
     } catch (error) {
       console.error('[PREDICTION SERVICE] Error:', error);

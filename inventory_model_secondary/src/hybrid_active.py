@@ -46,35 +46,56 @@ class HybridActiveSystem:
     """Active Hybrid Prophet + XGBoost with proper Prophet usage"""
     
     def __init__(self, db_path="converted_dataset/inventory_sales.db"):
-        self.db = DatabaseManager(db_path)
-        self.xgb_model = None
-        self.xgb_encoders = {}
-        self.xgb_features = None
-        self.prophet_cache = {}  # In-memory cache for Prophet models
-        self.top_items = []
-        self.item_stats = {}
-        self.historical_sales_cache = {}  # Cache for historical sales data
-        self.predictions_cache = {}  # Cache for predictions by month/year
-        
-        # Load XGBoost
-        self._load_xgboost_model()
-        
-        # Create cache directory
-        PROPHET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        
-        # Load Prophet cache from disk if exists
-        self._load_prophet_cache_from_disk()
+        try:
+            self.db = DatabaseManager(db_path)
+            self.xgb_model = None
+            self.xgb_encoders = {}
+            self.xgb_features = None
+            self.prophet_cache = {}  # In-memory cache for Prophet models
+            self.top_items = []
+            self.item_stats = {}
+            self.historical_sales_cache = {}  # Cache for historical sales data
+            self.predictions_cache = {}  # Cache for predictions by month/year
+            
+            # Load XGBoost
+            self._load_xgboost_model()
+            
+            # Create cache directory
+            PROPHET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Load Prophet cache from disk if exists
+            self._load_prophet_cache_from_disk()
+            
+            print("[INIT] HybridActiveSystem initialized successfully")
+        except Exception as e:
+            print(f"[ERROR] HybridActiveSystem initialization failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     def _load_xgboost_model(self):
         """Load XGBoost model"""
         try:
-            self.xgb_model = joblib.load(MODEL_DIR / "ml_model.pkl")
-            self.xgb_encoders = joblib.load(MODEL_DIR / "ml_encoders.pkl")
-            metrics = joblib.load(MODEL_DIR / "ml_metrics.pkl")
+            print(f"[DEBUG] MODEL_DIR: {MODEL_DIR}")
+            print(f"[DEBUG] MODEL_DIR exists: {MODEL_DIR.exists()}")
+            
+            model_file = MODEL_DIR / "ml_model.pkl"
+            encoders_file = MODEL_DIR / "ml_encoders.pkl"
+            metrics_file = MODEL_DIR / "ml_metrics.pkl"
+            
+            print(f"[DEBUG] ml_model.pkl exists: {model_file.exists()}")
+            print(f"[DEBUG] ml_encoders.pkl exists: {encoders_file.exists()}")
+            print(f"[DEBUG] ml_metrics.pkl exists: {metrics_file.exists()}")
+            
+            self.xgb_model = joblib.load(model_file)
+            self.xgb_encoders = joblib.load(encoders_file)
+            metrics = joblib.load(metrics_file)
             self.xgb_features = metrics.get('features', [])
             print("OK XGBoost model loaded")
         except Exception as e:
             print(f"ERROR Loading XGBoost: {e}")
+            import traceback
+            traceback.print_exc()
             raise
     
     def _load_prophet_cache_from_disk(self):
