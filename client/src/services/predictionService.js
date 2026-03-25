@@ -2,12 +2,10 @@
  * Prediction Service - Handles all API calls for predictions
  */
 
-// Use relative path for API calls (proxied through nginx)
-// In Docker: /api/ → nginx → backend:8001
-// In local dev: http://localhost:8001
-const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-  ? 'http://localhost:8001' 
-  : '/api';
+// Use /api proxy in Docker, direct localhost:8001 for local dev
+const API_BASE_URL = window.location.port === '5016' || window.location.port === '5015'
+  ? '/api'
+  : 'http://localhost:8001';
 
 console.log('[PREDICTION SERVICE] API Base URL:', API_BASE_URL);
 

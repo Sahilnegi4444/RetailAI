@@ -1,15 +1,15 @@
 import axios from "axios";
 
 // API Configuration
-// For local development: http://localhost:8001 (Production API)
-// For Docker/Nginx: /api (proxies to backend)
-const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-  ? 'http://localhost:8001'
-  : '/api';
+// In Docker: Use /api proxy (nginx forwards to backend:8001)
+// Local dev with backend running: Use http://localhost:8001
+const API_BASE_URL = window.location.port === '5016' || window.location.port === '5015'
+  ? '/api'  // Docker - use nginx proxy
+  : 'http://localhost:8001';  // Local dev - direct to backend
 
 console.log("🔧 [API CONFIG] Base URL:", API_BASE_URL);
-console.log("🔧 [API CONFIG] Environment:", import.meta.env.MODE);
-console.log("🔧 [API CONFIG] VITE_API_URL:", import.meta.env.VITE_API_URL);
+console.log("🔧 [API CONFIG] Hostname:", window.location.hostname);
+console.log("🔧 [API CONFIG] Port:", window.location.port);
 
 const getApiUrl = () => {
   console.log("🔧 [API] Returning API URL:", API_BASE_URL);
