@@ -3,7 +3,7 @@ import axios from "axios";
 // API Configuration
 // In Docker: Use /api proxy (nginx forwards to backend:8001)
 // Local dev with backend running: Use http://localhost:8001
-const API_BASE_URL = window.location.port === '5016' || window.location.port === '5015'
+const API_BASE_URL = window.location.port === '5016' 
   ? '/api'  // Docker - use nginx proxy
   : 'http://localhost:8001';  // Local dev - direct to backend
 

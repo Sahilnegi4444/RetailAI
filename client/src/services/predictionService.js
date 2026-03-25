@@ -3,7 +3,7 @@
  */
 
 // Use /api proxy in Docker, direct localhost:8001 for local dev
-const API_BASE_URL = window.location.port === '5016' || window.location.port === '5015'
+const API_BASE_URL = window.location.port === '5016'
   ? '/api'
   : 'http://localhost:8001';
 
