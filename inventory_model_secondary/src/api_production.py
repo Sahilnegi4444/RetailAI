@@ -88,10 +88,16 @@ app.add_middleware(
 # ============================================================================
 
 @app.post("/upload-data")
-async def upload_data(file: UploadFile = File(...)):
+async def upload_data(
+    file: UploadFile = File(...),
+    year: int = Form(None),
+    month: int = Form(None),
+    category: str = Form(None)
+):
     """Upload Excel/CSV file and process it"""
     try:
         print(f"\n[UPLOAD] Received file: {file.filename}")
+        print(f"[UPLOAD] Parameters: year={year}, month={month}, category={category}")
         
         # Read file
         content = await file.read()
@@ -110,14 +116,19 @@ async def upload_data(file: UploadFile = File(...)):
         # Normalize column names
         df.columns = [col.strip().upper() for col in df.columns]
         
-        # Extract year and month from filename or use current
-        year = datetime.now().year
-        month = datetime.now().month
-        category = "Grocery"  # Default
+        # Use provided parameters or extract from filename
+        if year is None:
+            year = datetime.now().year
+            if "2024" in file.filename or "2025" in file.filename or "2026" in file.filename:
+                year = int([x for x in file.filename.split() if x.isdigit() and len(x) == 4][0])
         
-        # Try to extract from filename
-        if "2024" in file.filename or "2025" in file.filename or "2026" in file.filename:
-            year = int([x for x in file.filename.split() if x.isdigit() and len(x) == 4][0])
+        if month is None:
+            month = datetime.now().month
+        
+        if category is None:
+            category = "Grocery"
+        
+        print(f"[UPLOAD] Using: year={year}, month={month}, category={category}")
         
         # Clean the dataframe
         df_clean = cleaner.clean_dataframe(df, year, month, category)
@@ -141,7 +152,12 @@ async def upload_data(file: UploadFile = File(...)):
         print(f"[UPLOAD] Successfully stored {len(df_clean)} records")
         
         return {
+            "success": True,
             "status": "success",
+            "filename": file.filename,
+            "year": year,
+            "month": month,
+            "category": category,
             "records_uploaded": len(df_clean),
             "items": stats['unique_items'],
             "date_range": {
@@ -149,14 +165,17 @@ async def upload_data(file: UploadFile = File(...)):
                 "end": stats['date_range'][1]
             },
             "total_units_sold": stats['total_units_sold'],
-            "message": "Data uploaded and stored successfully"
+            "message": f"Successfully uploaded {len(df_clean)} records for {category} - {month}/{year}",
+            "note": "Run retrain to update predictions with new data"
         }
         
     except Exception as e:
         print(f"[ERROR] Upload failed: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=400,
-            content={"error": str(e)}
+            content={"error": str(e), "success": False}
         )
 
 # ============================================================================
@@ -725,6 +744,80 @@ def root():
         }
     except Exception as e:
         print(f"[ERROR] Failed to get root info: {e}")
+        return {
+            "name": "Production ML Demand Forecasting API",
+            "version": "8.0",
+            "port": PORT,
+            "status": "ready",
+            "error": str(e)
+        }
+
+@app.get("/")
+def get_database_info():
+    """Get database information (for Database page)"""
+    try:
+        db_local = DatabaseManager()
+        db_local.connect()
+        stats = db_local.get_database_stats()
+        
+        # Get category breakdown
+        category_query = '''
+            SELECT category, COUNT(DISTINCT item_name) as count 
+            FROM inventory_sales 
+            GROUP BY category
+        '''
+        category_df = pd.read_sql_query(category_query, db_local.conn)
+        
+        # Get critical items
+        critical_query = '''
+            SELECT COUNT(DISTINCT item_name) as count 
+            FROM inventory_sales 
+            WHERE closing_stock < 100
+        '''
+        critical_df = pd.read_sql_query(critical_query, db_local.conn)
+        
+        db_local.disconnect()
+        
+        grocery_count = 0
+        liquor_count = 0
+        for _, row in category_df.iterrows():
+            if row['category'] == 'Grocery':
+                grocery_count = row['count']
+            elif row['category'] == 'Liquor':
+                liquor_count = row['count']
+        
+        return {
+            "name": "Production ML Demand Forecasting API",
+            "version": "8.0",
+            "port": PORT,
+            "status": "ready",
+            "pipeline": "Upload → Process → Store → Predict → Retrain → Display",
+            "data_period": f"{stats['date_range'][0]} to {stats['date_range'][1]}",
+            "model": "Hybrid Prophet + XGBoost",
+            "business_intelligence": "enabled",
+            "enhanced_predictions": "active",
+            "inventory": {
+                "total_items": stats['unique_items'],
+                "grocery_items": grocery_count,
+                "liquor_items": liquor_count,
+                "critical_items": int(critical_df['count'].iloc[0]) if len(critical_df) > 0 else 0
+            },
+            "endpoints": {
+                "stores": "GET /stores",
+                "items": "GET /items",
+                "all_items": "GET /all_items",
+                "upload": "POST /upload-data",
+                "preview": "GET /data-preview",
+                "predict": "POST /predict",
+                "retrain": "POST /retrain",
+                "health": "GET /health",
+                "stats": "GET /stats"
+            }
+        }
+    except Exception as e:
+        print(f"[ERROR] Failed to get database info: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "name": "Production ML Demand Forecasting API",
             "version": "8.0",

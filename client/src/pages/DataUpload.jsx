@@ -44,7 +44,11 @@ const DataUpload = () => {
   const checkModelHealth = async () => {
     setCheckingHealth(true);
     try {
-      const response = await fetch("http://localhost:8003/health");
+      const baseURL = window.location.port === '5016' 
+        ? '/api'  // Docker - use nginx proxy
+        : 'http://localhost:8001';  // Local dev - direct to backend
+      
+      const response = await fetch(`${baseURL}/health`);
       const data = await response.json();
       setModelHealth({
         status: data.status,
@@ -66,7 +70,11 @@ const DataUpload = () => {
 
   const checkUploadedFiles = async () => {
     try {
-      const response = await fetch("http://localhost:8003/data-preview?limit=10");
+      const baseURL = window.location.port === '5016' 
+        ? '/api'  // Docker - use nginx proxy
+        : 'http://localhost:8001';  // Local dev - direct to backend
+      
+      const response = await fetch(`${baseURL}/data-preview?limit=10`);
       const data = await response.json();
       console.log("📁 Files in data directory:", data);
       alert(`Data Preview:\n\nTotal Records: ${data.total || 0}\n\nColumns: ${data.columns?.join(', ') || 'N/A'}\n\nSample records loaded successfully`);

@@ -19,7 +19,9 @@ const Database = () => {
   const loadDatabaseInfo = async () => {
     try {
       setLoading(true);
-      const baseURL = "http://localhost:8003";
+      const baseURL = window.location.port === '5016' 
+        ? '/api'  // Docker - use nginx proxy
+        : 'http://localhost:8001';  // Local dev - direct to backend
       
       const response = await fetch(`${baseURL}/`);
       const info = await response.json();
