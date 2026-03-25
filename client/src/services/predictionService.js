@@ -19,13 +19,21 @@ export const predictionService = {
       const body = { prediction_date: predictionDate };
       
       console.log('[PREDICTION SERVICE] Calling:', url);
-      console.log('[PREDICTION SERVICE] Body:', body);
+      console.log('[PREDICTION SERVICE] Body:', JSON.stringify(body));
       console.log('[PREDICTION SERVICE] Full URL:', window.location.origin + url);
+      console.log('[PREDICTION SERVICE] API_BASE_URL:', API_BASE_URL);
+      console.log('[PREDICTION SERVICE] Window location:', {
+        origin: window.location.origin,
+        hostname: window.location.hostname,
+        port: window.location.port,
+        protocol: window.location.protocol,
+      });
       
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         body: JSON.stringify(body),
       });
@@ -39,12 +47,13 @@ export const predictionService = {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[PREDICTION SERVICE] Error response:', errorText);
+        console.error('[PREDICTION SERVICE] Error response body:', errorText);
+        console.error('[PREDICTION SERVICE] Error status:', response.status);
         throw new Error(`API Error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
-      console.log('[PREDICTION SERVICE] Success:', data);
+      console.log('[PREDICTION SERVICE] Success - predictions count:', data.predictions?.length);
       return data;
     } catch (error) {
       console.error('[PREDICTION SERVICE] Error:', error);

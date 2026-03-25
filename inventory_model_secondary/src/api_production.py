@@ -25,6 +25,9 @@ from inventory_model_secondary.src.analytics_engine import AnalyticsEngine
 # Pydantic models
 class PredictRequest(BaseModel):
     prediction_date: str = None
+    
+    class Config:
+        extra = "allow"  # Allow extra fields
 
 # Configuration
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -269,8 +272,13 @@ def retrain_model():
 async def generate_predictions(request: PredictRequest = None):
     """Generate predictions with trend adjustments and explainability"""
     try:
-        print(f"\n[PREDICT] Request received: {request}")
+        print(f"\n[PREDICT] Request received")
         print(f"[PREDICT] Request type: {type(request)}")
+        print(f"[PREDICT] Request object: {request}")
+        
+        if request is None:
+            print("[PREDICT] WARNING: Request is None, creating default")
+            request = PredictRequest()
         
         if hybrid is None:
             print("[PREDICT] ERROR: Hybrid system not loaded")
@@ -279,12 +287,13 @@ async def generate_predictions(request: PredictRequest = None):
                 content={"error": "Hybrid system not loaded"}
             )
         
+        # Get prediction date from request
         prediction_date = None
-        if request and hasattr(request, 'prediction_date'):
+        if request and hasattr(request, 'prediction_date') and request.prediction_date:
             prediction_date = request.prediction_date
             print(f"[PREDICT] Got prediction_date from request: {prediction_date}")
         
-        if prediction_date is None:
+        if not prediction_date:
             prediction_date = datetime.now().strftime("%Y-%m-%d")
             print(f"[PREDICT] Using current date: {prediction_date}")
         
