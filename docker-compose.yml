@@ -13,7 +13,7 @@ services:
       - ./converted_dataset:/app/converted_dataset
       - ./inventory_model_secondary/models:/app/inventory_model_secondary/models
     ports:
-    - "8002:8001"  
+    - "8005:8001"  
     networks:
       - retail-network
     restart: unless-stopped
