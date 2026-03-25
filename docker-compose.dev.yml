@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: retail-api-dev
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8002
+      - DATABASE_PATH=/app/converted_dataset/inventory_sales.db
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./converted_dataset:/app/converted_dataset
+      - ./inventory_model_secondary/models:/app/inventory_model_secondary/models
+    expose:
+      - "8002"
+    networks:
+      - retail-network-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: retail-web-dev
+    ports:
+      - "5016:80"
+    volumes:
+      - ./nginx.conf.dev:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend-dev:
+        condition: service_healthy
+    networks:
+      - retail-network-dev
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  retail-network-dev:
+    driver: bridge
