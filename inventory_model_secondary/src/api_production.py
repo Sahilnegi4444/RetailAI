@@ -28,7 +28,7 @@ class PredictRequest(BaseModel):
 
 # Configuration
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", 8003))
+PORT = int(os.getenv("PORT", 8001))
 
 print(f"[CONFIG] Starting Production API")
 print(f"[CONFIG] Host: {HOST}, Port: {PORT}")

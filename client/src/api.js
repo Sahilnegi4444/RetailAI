@@ -350,7 +350,7 @@ export const getModelInfo = () => {
       name: "Production ML System",
       type: "Hybrid Prophet + XGBoost",
       accuracy: "89.2%",
-      port: 8003,
+      port: 8001,
       approach: "Hybrid Time-Series Forecasting",
       features: "3,309 Items • XGBoost • Prophet • Hybrid Predictions"
     };
