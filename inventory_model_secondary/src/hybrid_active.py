@@ -132,7 +132,8 @@ class HybridActiveSystem:
                 SUM(net_qty) as total_sold,
                 AVG(r_rate) as avg_price,
                 COUNT(DISTINCT date) as days_data,
-                MAX(closing_stock) as current_stock
+                MAX(closing_stock) as current_stock,
+                MAX(date) as last_date
             FROM inventory_sales
             GROUP BY item_name, category
             ORDER BY total_sold DESC
@@ -143,12 +144,21 @@ class HybridActiveSystem:
         for _, row in df.iterrows():
             # Normalize item name
             normalized_name = normalize_name(row['item_name'])
+            last_date_str = row['last_date']
+            if last_date_str:
+                try:
+                    # Convert to YYYY-MM-DD format
+                    last_date_str = str(last_date_str).split()[0]  # Remove time part if present
+                except:
+                    last_date_str = None
+            
             self.item_stats[normalized_name] = {
                 'category': row['category'],
                 'total_sold': int(row['total_sold']) if row['total_sold'] else 0,
                 'avg_price': float(row['avg_price']) if row['avg_price'] else 0,
                 'days_data': int(row['days_data']) if row['days_data'] else 0,
-                'current_stock': int(row['current_stock']) if row['current_stock'] else 0
+                'current_stock': int(row['current_stock']) if row['current_stock'] else 0,
+                'last_date': last_date_str
             }
         
         # Get top 200 items for Prophet
@@ -367,11 +377,18 @@ class HybridActiveSystem:
             features_dict['quarter'] = (month - 1) // 3 + 1
             features_dict['day_of_year'] = datetime.now().timetuple().tm_yday
             
-            # Create feature vector
+            # Create feature vector with proper column ordering
             X = pd.DataFrame([features_dict])
+            # Ensure all features are present and in correct order
+            for feat in self.xgb_features:
+                if feat not in X.columns:
+                    X[feat] = 0
             X = X[self.xgb_features]
             
-            prediction = self.xgb_model.predict(X)[0]
+            # Convert to numpy array to avoid feature name validation issues
+            X_array = X.values
+            
+            prediction = self.xgb_model.predict(X_array)[0]
             
             print(f"[PRED] {item_name}: stock={current_stock}, price={avg_price}, sold={total_sold}, pred={prediction}")
             
@@ -494,14 +511,40 @@ class HybridActiveSystem:
         predictions = []
         xgb_count = 0
         
-        # Only predict for top 500 items by sales volume for speed
-        top_items = sorted(
+        # Predict for ALL items (or top 1000 for performance) to include new uploads
+        all_items_by_sales = sorted(
             self.item_stats.items(),
             key=lambda x: x[1].get('total_sold', 0),
             reverse=True
-        )[:500]
+        )
         
-        print(f"[PREDICT] Predicting for top 500 items (XGBoost only - fast mode)...")
+        # Get top 1000 items by sales
+        top_items = all_items_by_sales[:1000]
+        
+        # Also include any items with recent data (last 30 days) regardless of sales volume
+        from datetime import datetime, timedelta
+        recent_cutoff = datetime.now() - timedelta(days=30)
+        
+        recent_items = []
+        for item_key, stats in self.item_stats.items():
+            last_date_str = stats.get('last_date', '2024-01-01')
+            try:
+                last_date = datetime.strptime(last_date_str, '%Y-%m-%d')
+                if last_date >= recent_cutoff:
+                    # Check if this item is not already in top_items
+                    if item_key not in [item[0] for item in top_items]:
+                        recent_items.append((item_key, stats))
+            except:
+                continue
+        
+        # Combine top items with recent items
+        all_prediction_items = top_items + recent_items
+        
+        print(f"[PREDICT] Predicting for {len(top_items)} top items + {len(recent_items)} recent items = {len(all_prediction_items)} total")
+        print(f"[PREDICT] Total items available: {len(self.item_stats)}")
+        
+        if recent_items:
+            print(f"[PREDICT] Recent items included: {[item[0] for item in recent_items[:5]]}")  # Show first 5
         
         # Extract target month from prediction date
         try:
@@ -510,7 +553,7 @@ class HybridActiveSystem:
         except:
             target_month = datetime.now().month
         
-        for item_key, stats in top_items:
+        for item_key, stats in all_prediction_items:
             try:
                 # Get XGBoost prediction using the item_key with target month for seasonality
                 xgb_pred = self._get_xgboost_prediction(item_key, None, target_month)

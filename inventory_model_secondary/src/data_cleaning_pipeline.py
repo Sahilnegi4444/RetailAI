@@ -18,6 +18,11 @@ class DataCleaner:
         "O_B", "Closing_Stock", "Net_Tax"
     ]
     
+    # Optional columns that may be present
+    OPTIONAL_COLUMNS = [
+        "Year", "Month", "Category", "Date"
+    ]
+    
     NUMERIC_COLUMNS = [
         "W_Rate", "R_Rate", "Qty", "Refund_Qty", "Net_Qty",
         "R_Amt", "W_Amt", "Profit", "O_B", "Closing_Stock", "Net_Tax"
@@ -52,7 +57,9 @@ class DataCleaner:
     
     def is_invalid_row(self, row):
         """Check if row is invalid (total, summary, etc.)"""
-        item_name = str(row.get('Item_Name', '')).upper()
+        # Handle uppercase column names (normalized in clean_dataframe)
+        item_name_col = 'ITEM_NAME'
+        item_name = str(row.get(item_name_col, '')).upper()
         
         invalid_keywords = [
             'TOTAL', 'GROUP TOTAL', 'REPORT TOTAL', 'SUMMARY',
@@ -66,14 +73,37 @@ class DataCleaner:
         
         return False
     
+    def validate_columns(self, df):
+        """Validate that dataframe has required columns"""
+        df_columns = [col.strip().upper() for col in df.columns]
+        required_upper = [col.upper() for col in self.REQUIRED_COLUMNS]
+        
+        missing_columns = []
+        for req_col in required_upper:
+            if req_col not in df_columns:
+                missing_columns.append(req_col)
+        
+        if missing_columns:
+            return False, f"Missing required columns: {', '.join(missing_columns)}"
+        
+        return True, "All required columns present"
+    
     def clean_dataframe(self, df, year, month, category):
         """Clean a single dataframe"""
         
         self.stats['rows_before'] += len(df)
         
+        # Normalize all column names to uppercase for consistency
+        df.columns = [col.strip().upper() for col in df.columns]
+        
+        # Handle both original and uppercase column names
+        item_name_col = 'ITEM_NAME'
+        gp_index_col = 'GP_INDEX_NO'
+        pluno_col = 'PLUNO'
+        
         # Step 1: Remove rows with null Item_Name
-        df = df.dropna(subset=['Item_Name'])
-        df = df[df['Item_Name'].astype(str).str.strip() != '']
+        df = df.dropna(subset=[item_name_col])
+        df = df[df[item_name_col].astype(str).str.strip() != '']
         self.stats['null_items'] += self.stats['rows_before'] - len(df)
         
         # Step 2: Remove invalid rows (totals, summaries)
@@ -82,31 +112,39 @@ class DataCleaner:
         
         # Step 3: Clean numeric columns
         for col in self.NUMERIC_COLUMNS:
-            if col in df.columns:
-                df[col] = df[col].apply(self.clean_number)
+            upper_col = col.upper()
+            if upper_col in df.columns:
+                df[upper_col] = df[upper_col].apply(self.clean_number)
         
         # Step 4: Clean text columns
-        df['Item_Name'] = df['Item_Name'].astype(str).str.strip().str.upper()
-        df['GP_Index_No'] = df['GP_Index_No'].astype(str).str.strip()
-        df['pluno'] = df['pluno'].astype(str).str.strip()
+        df[item_name_col] = df[item_name_col].astype(str).str.strip().str.upper()
+        df[gp_index_col] = df[gp_index_col].astype(str).str.strip()
+        df[pluno_col] = df[pluno_col].astype(str).str.strip()
         
         # Step 5: Fill missing values
         for col in self.NUMERIC_COLUMNS:
-            if col in df.columns:
-                df[col] = df[col].fillna(0)
+            upper_col = col.upper()
+            if upper_col in df.columns:
+                df[upper_col] = df[upper_col].fillna(0)
         
         # Step 6: Add metadata
-        df['Year'] = year
-        df['Month'] = month
-        df['Category'] = category
-        df['Date'] = pd.to_datetime(f"{year}-{month:02d}-01")
+        df['YEAR'] = year
+        df['MONTH'] = month  
+        df['CATEGORY'] = category
+        df['DATE'] = pd.to_datetime(f"{year}-{month:02d}-01")
         
         # Step 7: Enforce column order
-        cols_to_keep = self.REQUIRED_COLUMNS + ['Year', 'Month', 'Category', 'Date']
-        df = df[[col for col in cols_to_keep if col in df.columns]]
+        cols_to_keep = []
+        required_cols_upper = [col.upper() for col in self.REQUIRED_COLUMNS] + ['YEAR', 'MONTH', 'CATEGORY', 'DATE']
+        
+        for col in required_cols_upper:
+            if col in df.columns:
+                cols_to_keep.append(col)
+        
+        df = df[cols_to_keep]
         
         # Step 8: Remove duplicates (same date, item, pluno)
-        df = df.drop_duplicates(subset=['Date', 'Item_Name', 'pluno'], keep='first')
+        df = df.drop_duplicates(subset=['DATE', item_name_col, pluno_col], keep='first')
         
         self.stats['rows_after'] += len(df)
         
@@ -222,8 +260,13 @@ class DataCleaner:
             print(f"Rows removed (invalid): {self.stats['rows_removed']:,}")
             print(f"Rows removed (null items): {self.stats['null_items']:,}")
             print(f"Final clean rows: {len(combined_df):,}")
-            print(f"Unique items: {combined_df['Item_Name'].nunique():,}")
-            print(f"Date range: {combined_df['Date'].min().date()} to {combined_df['Date'].max().date()}")
+            
+            # Handle both uppercase and original column names for stats
+            item_col = 'ITEM_NAME' if 'ITEM_NAME' in combined_df.columns else 'Item_Name'
+            date_col = 'DATE' if 'DATE' in combined_df.columns else 'Date'
+            
+            print(f"Unique items: {combined_df[item_col].nunique():,}")
+            print(f"Date range: {combined_df[date_col].min().date()} to {combined_df[date_col].max().date()}")
             
             return combined_df
         else:

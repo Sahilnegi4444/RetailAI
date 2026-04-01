@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { getBulkPrediction, getStores } from "../api";
+import { getBulkPrediction, getBulkPredictionPaginated, getStores } from "../api";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import "./BulkPrediction.css";
 
 // Export utility functions
@@ -139,6 +140,10 @@ const BulkPrediction = () => {
   const [isSingleStore, setIsSingleStore] = useState(false);
   const [searchQuery, setSearchQuery] = useState(""); // Add search state
   const [categoryFilter, setCategoryFilter] = useState("all"); // Add category filter state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(100);
+  const [totalPages, setTotalPages] = useState(0);
+  const [allPredictions, setAllPredictions] = useState([]);
 
   useEffect(() => {
     loadStores();
@@ -160,7 +165,11 @@ const BulkPrediction = () => {
           if (selectedModel === "secondary") {
             try {
               // Use Production API data-preview endpoint
-              const response = await fetch("http://localhost:8003/data-preview?limit=100");
+              const baseURL = window.location.port === '5016' 
+                ? '/api'  // Docker - use nginx proxy
+                : 'http://localhost:8001';  // Local dev - direct to backend
+              
+              const response = await fetch(`${baseURL}/data-preview?limit=100`);
               const previewData = await response.json();
               
               if (previewData.records) {
@@ -191,6 +200,7 @@ const BulkPrediction = () => {
     setLoading(true);
     setError(null);
     setExpandedProduct(null);
+    setCurrentPage(1);
     try {
       const requestData = {
         store_id: selectedStore,
@@ -202,9 +212,12 @@ const BulkPrediction = () => {
         requestData.category_filter = selectedCategory;
       }
       
-      const data = await getBulkPrediction(selectedStore, predictionDate, requestData);
+      // Use paginated endpoint for better performance
+      const data = await getBulkPredictionPaginated(selectedStore, predictionDate, 1, pageSize, requestData);
       
       console.log("📊 [BULK] Raw response:", data);
+      console.log("📊 [BULK] Predictions count:", data.predictions?.length);
+      console.log("📊 [BULK] Pagination:", data.pagination);
       
       // Check if there's an error in the response
       if (data.error) {
@@ -227,6 +240,10 @@ const BulkPrediction = () => {
           p.category && p.category.toLowerCase() === selectedCategory.toLowerCase()
         );
       }
+      
+      // Store all predictions and pagination info
+      setAllPredictions(predictions);
+      setTotalPages(data.pagination?.total_pages || 1);
       
       // Build summary from predictions
       const summary = {
@@ -463,78 +480,61 @@ const BulkPrediction = () => {
 
           <div className="form-group">
             <label>
+              📅 Prediction Year
+              <span className="help-tooltip" title="Select the year for predictions. Available years based on historical data.">ℹ️</span>
+            </label>
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(e.target.value);
+                // Update prediction date when year changes
+                const currentMonth = new Date(predictionDate).getMonth() + 1;
+                if (e.target.value !== 'combined') {
+                  setPredictionDate(`${e.target.value}-${String(currentMonth).padStart(2, '0')}-01`);
+                }
+              }}
+              className="form-input"
+            >
+              <option value="combined">All Years Combined</option>
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>
               📅 Prediction Month
               <span className="help-tooltip" title="Select the month for predictions. System caches predictions per month for faster performance.">ℹ️</span>
             </label>
             <div className="date-picker-container">
-              <input
-                type="month"
-                value={predictionDate.substring(0, 7)}
-                onChange={(e) => setPredictionDate(e.target.value + '-01')}
+              <select
+                value={new Date(predictionDate).getMonth() + 1}
+                onChange={(e) => {
+                  const year = selectedYear === 'combined' ? new Date().getFullYear() : selectedYear;
+                  const month = String(e.target.value).padStart(2, '0');
+                  setPredictionDate(`${year}-${month}-01`);
+                }}
                 className="form-input"
-                min={new Date().toISOString().substring(0, 7)}
-                max={new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().substring(0, 7)}
-              />
-              <div className="date-info">
-                <span className="date-display">
-                  📅 {new Date(predictionDate).toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'long'
-                  })}
-                </span>
-                <span className="days-ahead">
-                  (Predictions cached per month)
-                </span>
-              </div>
-              <div className="date-shortcuts">
-                <button
-                  type="button"
-                  className="btn-date-shortcut"
-                  onClick={() => {
-                    const date = new Date();
-                    date.setDate(date.getDate() + 7);
-                    setPredictionDate(date.toISOString().split("T")[0]);
-                  }}
-                  title="Predict stock needs for next week"
-                >
-                  📅 +1 Week
-                </button>
-                <button
-                  type="button"
-                  className="btn-date-shortcut"
-                  onClick={() => {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() + 1);
-                    setPredictionDate(date.toISOString().split("T")[0]);
-                  }}
-                  title="Predict stock needs for next month"
-                >
-                  📅 +1 Month
-                </button>
-                <button
-                  type="button"
-                  className="btn-date-shortcut"
-                  onClick={() => {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() + 3);
-                    setPredictionDate(date.toISOString().split("T")[0]);
-                  }}
-                  title="Predict stock needs for next 3 months"
-                >
-                  📅 +3 Months
-                </button>
-                <button
-                  type="button"
-                  className="btn-date-shortcut"
-                  onClick={() => {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() + 6);
-                    setPredictionDate(date.toISOString().split("T")[0]);
-                  }}
-                  title="Predict stock needs for next 6 months"
-                >
-                  📅 +6 Months
-                </button>
+              >
+                <option value={1}>January</option>
+                <option value={2}>February</option>
+                <option value={3}>March</option>
+                <option value={4}>April</option>
+                <option value={5}>May</option>
+                <option value={6}>June</option>
+                <option value={7}>July</option>
+                <option value={8}>August</option>
+                <option value={9}>September</option>
+                <option value={10}>October</option>
+                <option value={11}>November</option>
+                <option value={12}>December</option>
+              </select>
+              <div className="date-info-display">
+                📅 {new Date(predictionDate).toLocaleDateString('en-US', { 
+                  month: 'long',
+                  year: 'numeric'
+                })} {selectedYear === 'combined' ? '(All Years)' : ''}
               </div>
             </div>
           </div>
@@ -626,6 +626,91 @@ const BulkPrediction = () => {
                   {result.summary.currency}
                   {result.summary.total_revenue_at_risk.toLocaleString()}
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Charts Section */}
+          <div className="charts-section">
+            <div className="charts-grid">
+              {/* Demand vs Stock Chart */}
+              <div className="chart-card">
+                <h3>📊 Top 10 Items - Demand vs Stock</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={(result.predictions || []).slice(0, 10).map(p => ({
+                    name: p.item_name.length > 15 ? p.item_name.substring(0, 15) + '...' : p.item_name,
+                    demand: p.predicted_demand,
+                    stock: p.current_stock,
+                    order: p.recommended_order
+                  }))}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="demand" fill="#8884d8" name="Predicted Demand" />
+                    <Bar dataKey="stock" fill="#82ca9d" name="Current Stock" />
+                    <Bar dataKey="order" fill="#ffc658" name="Recommended Order" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Status Distribution Chart */}
+              <div className="chart-card">
+                <h3>🎯 Stock Status Distribution</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Critical', value: (result.predictions || []).filter(p => p.status === 'CRITICAL').length, fill: '#ff4444' },
+                        { name: 'Low', value: (result.predictions || []).filter(p => p.status === 'LOW').length, fill: '#ff8800' },
+                        { name: 'Adequate', value: (result.predictions || []).filter(p => p.status === 'ADEQUATE').length, fill: '#44ff44' },
+                        { name: 'Excess', value: (result.predictions || []).filter(p => p.status === 'EXCESS').length, fill: '#4444ff' }
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Category Breakdown Chart */}
+              <div className="chart-card">
+                <h3>📈 Category Performance</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={[
+                    {
+                      category: 'Grocery',
+                      items: (result.predictions || []).filter(p => p.category === 'Grocery').length,
+                      totalDemand: (result.predictions || []).filter(p => p.category === 'Grocery').reduce((sum, p) => sum + p.predicted_demand, 0),
+                      totalValue: (result.predictions || []).filter(p => p.category === 'Grocery').reduce((sum, p) => sum + (p.recommended_order * p.price), 0)
+                    },
+                    {
+                      category: 'Liquor',
+                      items: (result.predictions || []).filter(p => p.category === 'Liquor').length,
+                      totalDemand: (result.predictions || []).filter(p => p.category === 'Liquor').reduce((sum, p) => sum + p.predicted_demand, 0),
+                      totalValue: (result.predictions || []).filter(p => p.category === 'Liquor').reduce((sum, p) => sum + (p.recommended_order * p.price), 0)
+                    }
+                  ]}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="category" />
+                    <YAxis />
+                    <Tooltip formatter={(value, name) => {
+                      if (name === 'totalValue') return [`₹${value.toLocaleString()}`, 'Order Value'];
+                      return [value.toLocaleString(), name];
+                    }} />
+                    <Legend />
+                    <Bar dataKey="items" fill="#8884d8" name="Items Count" />
+                    <Bar dataKey="totalDemand" fill="#82ca9d" name="Total Demand" />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
@@ -725,10 +810,10 @@ const BulkPrediction = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {result.predictions
+                  {result.predictions && result.predictions.length > 0 ? result.predictions
                     .map((product, index) => {
                       // Calculate status based on backend data
-                      const finalPred = product.final_prediction || 0;
+                      const finalPred = product.final_prediction || product.predicted_demand || 0;
                       const currentStock = product.current_stock || 0;
                       const status = calculateStatus(currentStock, finalPred);
                       const category = product.category || "Grocery";
@@ -751,10 +836,16 @@ const BulkPrediction = () => {
                         predicted_demand: finalPred,
                         daily_demand: dailyDemand,
                         trend: trend,
-                        confidence: `${Math.round((product.confidence || 0.892) * 100)}%`
+                        confidence: `${Math.round((product.confidence || 0.892) * 100)}%`,
+                        item_name: product.item_name || 'Unknown Item'
                       };
                     })
                     .filter(product => {
+                      // Ensure product has required fields
+                      if (!product.item_name || !product.status) {
+                        return false;
+                      }
+                      
                       // Search filter
                       const matchesSearch = !searchQuery || 
                         (product.item_name && product.item_name.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -768,7 +859,7 @@ const BulkPrediction = () => {
                         product.status === exportFilters.status;
                       
                       return matchesSearch && matchesCategory && matchesStatus;
-                    })
+                    }) : []
                     .map((product, index) => (
                     <React.Fragment key={product.item_name || index}>
                       <tr
@@ -1512,113 +1603,6 @@ const BulkPrediction = () => {
                                     </div>
                                   </div>
 
-                                  {/* Historical Sales Chart */}
-                                  {product.last_4_weeks && product.last_4_weeks.length > 0 ? (
-                                    <>
-                                      {/* Simple Bar Chart Visualization */}
-                                      <div className="sales-chart-container">
-                                        <h5>📊 Monthly Sales History</h5>
-                                        <div className="simple-bar-chart">
-                                          {product.last_4_weeks.map((week, idx) => {
-                                            const maxSales = Math.max(...product.last_4_weeks.map(w => w.actual));
-                                            const barHeight = maxSales > 0 ? (week.actual / maxSales) * 100 : 0;
-                                            const monthName = new Date(week.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-                                            
-                                            return (
-                                              <div key={`chart-${idx}`} className="chart-bar-container">
-                                                <div className="chart-bar-wrapper">
-                                                  <div 
-                                                    className="chart-bar" 
-                                                    style={{ 
-                                                      height: `${Math.max(barHeight, 5)}%`,
-                                                      backgroundColor: week.actual > week.predicted ? '#10b981' : '#f59e0b'
-                                                    }}
-                                                    title={`${monthName}: ${week.actual} units sold`}
-                                                  >
-                                                    <span className="bar-value">{week.actual}</span>
-                                                  </div>
-                                                </div>
-                                                <div className="chart-label">{monthName}</div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                        <div className="chart-legend">
-                                          <div className="legend-item">
-                                            <div className="legend-color" style={{backgroundColor: '#10b981'}}></div>
-                                            <span>Above Expected</span>
-                                          </div>
-                                          <div className="legend-item">
-                                            <div className="legend-color" style={{backgroundColor: '#f59e0b'}}></div>
-                                            <span>Below Expected</span>
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      {/* Detailed Table */}
-                                      <div className="table-responsive">
-                                        <table className="history-table">
-                                          <thead>
-                                            <tr>
-                                              <th>Month</th>
-                                              <th>Units Sold</th>
-                                              <th>Expected</th>
-                                              <th>Performance</th>
-                                              <th>Trend</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {product.last_4_weeks.map((week, idx) => {
-                                              // Calculate realistic accuracy (not 100%)
-                                              const baseAccuracy = 85 + Math.random() * 10; // 85-95% range
-                                              const accuracy = week.actual > 0 ? 
-                                                Math.min(baseAccuracy, (100 - Math.abs(week.predicted - week.actual) / week.actual * 100)).toFixed(1) : 
-                                                baseAccuracy.toFixed(1);
-                                              
-                                              const performance = week.actual >= week.predicted ? 'above' : 'below';
-                                              const isRecent = idx >= product.last_4_weeks.length - 2;
-                                              
-                                              return (
-                                                <tr key={`week-${idx}`} className={isRecent ? 'recent-month' : ''}>
-                                                  <td>
-                                                    <strong>{new Date(week.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short' })}</strong>
-                                                    {isRecent && <span className="recent-badge">Recent</span>}
-                                                  </td>
-                                                  <td className="sales-actual">
-                                                    <strong>{Math.round(week.actual)}</strong> units
-                                                  </td>
-                                                  <td className="sales-predicted">{Math.round(week.predicted)}</td>
-                                                  <td>
-                                                    <span className={`performance-badge ${performance}`}>
-                                                      {performance === 'above' ? '📈' : '📉'} {accuracy}%
-                                                    </span>
-                                                  </td>
-                                                  <td>
-                                                    {idx > 0 && (
-                                                      <span className={`trend-indicator ${
-                                                        week.actual > product.last_4_weeks[idx-1].actual ? 'up' : 
-                                                        week.actual < product.last_4_weeks[idx-1].actual ? 'down' : 'stable'
-                                                      }`}>
-                                                        {week.actual > product.last_4_weeks[idx-1].actual ? '↗️' : 
-                                                         week.actual < product.last_4_weeks[idx-1].actual ? '↘️' : '➡️'}
-                                                      </span>
-                                                    )}
-                                                  </td>
-                                                </tr>
-                                              );
-                                            })}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="no-history">
-                                      <div className="no-history-icon">📊</div>
-                                      <h5>No Historical Data Available</h5>
-                                      <p>This item doesn't have enough sales history for analysis.</p>
-                                      <p className="note-small">Predictions are based on similar items and category averages.</p>
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             </div>

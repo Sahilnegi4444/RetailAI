@@ -21,10 +21,8 @@ const API = getApiUrl();
 // Create a clean axios instance for Production API
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000,  // Increased to 60 seconds for predictions
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  timeout: 300000,  // Increased to 5 minutes for model retraining
+  // Don't set default Content-Type - let each request set its own
 });
 
 // Add request interceptor for debugging
@@ -212,6 +210,10 @@ export const predictWithContext = async (data) => {
     // Use Production API predict endpoint
     const res = await apiClient.post(`/predict`, {
       prediction_date: data.prediction_date || new Date().toISOString().split('T')[0]
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
     });
     return res.data;
   } catch (error) {
@@ -227,6 +229,10 @@ export const getBulkPrediction = async (storeId, predictionDate, requestData) =>
     // Use Production API predict endpoint
     const res = await apiClient.post(`/predict`, {
       prediction_date: predictionDate || new Date().toISOString().split('T')[0]
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
     });
     
     console.log("📊 [API] Bulk prediction response:", res.data);
@@ -293,6 +299,86 @@ export const getBulkPrediction = async (storeId, predictionDate, requestData) =>
     };
   } catch (error) {
     console.error("❌ [API] Error fetching bulk prediction:", error);
+    throw error;
+  }
+};
+
+// Paginated bulk prediction - for handling large datasets
+export const getBulkPredictionPaginated = async (storeId, predictionDate, page = 1, pageSize = 100, requestData) => {
+  try {
+    console.log("📊 [API] getBulkPredictionPaginated called with:", { storeId, predictionDate, page, pageSize });
+    
+    // Use Production API predict-paginated endpoint
+    const res = await apiClient.post(`/predict-paginated?page=${page}&page_size=${pageSize}`, {
+      prediction_date: predictionDate || new Date().toISOString().split('T')[0]
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log("📊 [API] Paginated prediction response:", res.data);
+    
+    if (!res.data.predictions || !Array.isArray(res.data.predictions)) {
+      console.warn("⚠️ [API] No predictions array in response");
+      return {
+        prediction_date: predictionDate,
+        summary: res.data.summary || {},
+        predictions: [],
+        pagination: { page, page_size: pageSize, total_items: 0, total_pages: 0, has_next: false, has_prev: false }
+      };
+    }
+    
+    // Filter by category if specified
+    let predictions = res.data.predictions;
+    if (requestData && requestData.category_filter && requestData.category_filter !== "all") {
+      predictions = predictions.filter(p => {
+        const category = p.category || "grocery";
+        return category === requestData.category_filter;
+      });
+    }
+    
+    // Ensure all predictions have required fields
+    predictions = predictions.map(p => {
+      let last_4_weeks = [];
+      if (p.historical_sales) {
+        const allMonths = [];
+        for (const year in p.historical_sales) {
+          for (const month in p.historical_sales[year]) {
+            allMonths.push({
+              date: `${year}-${String(month).padStart(2, '0')}-01`,
+              actual: p.historical_sales[year][month],
+              predicted: p.historical_sales[year][month]
+            });
+          }
+        }
+        last_4_weeks = allMonths.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4);
+      }
+      
+      return {
+        item_name: p.item_name || 'Unknown',
+        final_prediction: parseFloat(p.final_prediction) || 0,
+        xgb_prediction: parseFloat(p.xgb_prediction) || 0,
+        prophet_prediction: p.prophet_prediction || null,
+        current_stock: parseInt(p.current_stock) || 0,
+        recommended_order: parseInt(p.recommended_order) || 0,
+        price: parseFloat(p.price) || 0,
+        method: p.method || 'xgboost_only',
+        confidence: p.confidence || 0.892,
+        category: p.category || 'Grocery',
+        historical_sales: p.historical_sales || null,
+        last_4_weeks: last_4_weeks
+      };
+    });
+    
+    return {
+      prediction_date: res.data.prediction_date,
+      summary: res.data.summary || {},
+      predictions: predictions,
+      pagination: res.data.pagination || { page, page_size: pageSize, total_items: 0, total_pages: 0, has_next: false, has_prev: false }
+    };
+  } catch (error) {
+    console.error("❌ [API] Error fetching paginated bulk prediction:", error);
     throw error;
   }
 };
@@ -370,8 +456,8 @@ export const getDataFormat = async () => {
   try {
     // Return expected format for Production API
     return {
-      format: "Tab-delimited Excel",
-      file_types: [".xls", ".xlsx"],
+      format: "Excel or CSV files",
+      file_types: [".xls", ".xlsx", ".csv"],
       required_columns: [
         {
           name: "Date",
@@ -432,14 +518,16 @@ export const getDataFormat = async () => {
         "Item names must be consistent across all uploads",
         "Closing_Stock should be the inventory at end of day",
         "All numeric fields should contain numbers only (no currency symbols)",
-        "One file per month - uploading same month/year will overwrite previous data"
+        "One file per month - uploading same month/year will overwrite previous data",
+        "CSV files should be comma-separated with headers in first row",
+        "Excel files can be .xls or .xlsx format"
       ]
     };
   } catch (error) {
     console.error("Error getting data format:", error);
     return { 
-      format: "Tab-delimited Excel", 
-      file_types: [".xls", ".xlsx"],
+      format: "Excel or CSV files", 
+      file_types: [".xls", ".xlsx", ".csv"],
       required_columns: [],
       sample_data: [],
       notes: []
@@ -464,13 +552,29 @@ export const uploadMonthlyData = async (file, year, month, category) => {
     url: `${API_BASE_URL}/upload-data`
   });
 
+  // Debug: Log FormData contents
+  console.log("📤 FormData contents:");
+  for (let [key, value] of formData.entries()) {
+    console.log(`  ${key}:`, value);
+  }
+
   try {
-    const res = await apiClient.post(`/upload-data`, formData);
+    // Don't set Content-Type header - let browser set it with boundary
+    const res = await apiClient.post(`/upload-data`, formData, {
+      headers: {
+        // Remove Content-Type to let browser set multipart boundary
+      },
+    });
     
     console.log("✅ Upload response:", res.data);
     return res.data;
   } catch (error) {
     console.error("❌ Upload error:", error);
+    console.error("❌ Error details:", {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    });
     throw error;
   }
 };

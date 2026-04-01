@@ -1125,6 +1125,19 @@ th .help-tooltip {
   font-style: italic;
 }
 
+.date-info-display {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  pointer-events: none;
+  user-select: none;
+}
+
 .btn-date-shortcut {
   display: flex;
   align-items: center;
@@ -2463,4 +2476,64 @@ th .help-tooltip {
   .table-wrapper {
     overflow-x: auto;
   }
+}
+/* Charts Section */
+.charts-section {
+  margin: 2rem 0;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.chart-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.chart-card h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chart-card:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+/* Responsive charts */
+@media (max-width: 768px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .chart-card:nth-child(3) {
+    grid-column: 1;
+  }
+}
+
+/* Chart tooltips */
+.recharts-tooltip-wrapper {
+  background: var(--bg-primary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.recharts-tooltip-label {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+}
+
+.recharts-tooltip-item {
+  color: var(--text-secondary) !important;
 }

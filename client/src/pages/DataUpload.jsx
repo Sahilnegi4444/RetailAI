@@ -90,14 +90,18 @@ const DataUpload = () => {
       const validTypes = [
         "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/csv",
+        "application/csv",
+        "text/comma-separated-values"
       ];
       if (validTypes.includes(selectedFile.type) || 
           selectedFile.name.endsWith('.xlsx') || 
-          selectedFile.name.endsWith('.xls')) {
+          selectedFile.name.endsWith('.xls') ||
+          selectedFile.name.endsWith('.csv')) {
         setFile(selectedFile);
         setUploadResult(null);
       } else {
-        setUploadResult({ error: "Please select an Excel file (.xls or .xlsx)" });
+        setUploadResult({ error: "Please select an Excel (.xls, .xlsx) or CSV (.csv) file" });
       }
     }
   };
@@ -215,10 +219,10 @@ const DataUpload = () => {
               <div className="info-box">
                 <h3>📄 File Requirements</h3>
                 <ul>
-                  <li><strong>Format:</strong> {dataFormat?.format || "Tab-delimited"} (Excel file)</li>
-                  <li><strong>File Types:</strong> {dataFormat?.file_types?.join(", ") || ".xls, .xlsx"}</li>
+                  <li><strong>Format:</strong> Excel or CSV files</li>
+                  <li><strong>File Types:</strong> .xls, .xlsx, .csv</li>
                   <li><strong>One file per month</strong> - System will overwrite existing data</li>
-                  <li><strong>Naming:</strong> Use format like "06 JUN.xls" or "sale jun 24.xlsx"</li>
+                  <li><strong>Naming:</strong> Use format like "06 JUN.xls", "sale jun 24.xlsx", or "march_2026.csv"</li>
                 </ul>
               </div>
 
@@ -332,16 +336,16 @@ const DataUpload = () => {
               <input
                 id="file-input"
                 type="file"
-                accept=".xlsx,.xls"
+                accept=".xlsx,.xls,.csv"
                 onChange={handleFileChange}
                 className="file-input"
               />
               <label htmlFor="file-input" className="file-label">
                 <span className="upload-icon">📄</span>
                 <span className="upload-text">
-                  {file ? file.name : "Click to select Excel file"}
+                  {file ? file.name : "Click to select Excel or CSV file"}
                 </span>
-                <span className="upload-hint">Excel files only (.xls, .xlsx)</span>
+                <span className="upload-hint">Excel (.xls, .xlsx) or CSV (.csv) files</span>
               </label>
             </div>
 
@@ -486,10 +490,11 @@ const DataUpload = () => {
           <div className="instruction-step">
             <span className="step-number">1</span>
             <div>
-              <h3>Prepare Your Excel File</h3>
+              <h3>Prepare Your Data File</h3>
               <p>
-                Ensure your Excel file follows the required format (click "Show Format" above to see details).
-                The file should be tab-delimited with all required columns, especially <strong>Net_Qty</strong> which contains actual units sold.
+                Ensure your file (Excel .xls/.xlsx or CSV .csv) follows the required format (click "Show Format" above to see details).
+                The file should contain all required columns, especially <strong>Net_Qty</strong> which contains actual units sold.
+                CSV files should be comma-separated with headers in the first row.
               </p>
             </div>
           </div>
@@ -510,7 +515,7 @@ const DataUpload = () => {
             <div>
               <h3>Upload the File</h3>
               <p>
-                Click the upload area to select your Excel file, then click "Upload Data".
+                Click the upload area to select your Excel or CSV file, then click "Upload Data".
                 The system will validate and save your file to the appropriate folder.
               </p>
             </div>
