@@ -21,6 +21,7 @@ from inventory_model_secondary.src.database_manager import DatabaseManager
 from inventory_model_secondary.src.data_cleaning_pipeline import DataCleaner
 from inventory_model_secondary.src.ml_training_from_db import MLTrainerFromDB
 from inventory_model_secondary.src.analytics_engine import AnalyticsEngine
+from inventory_model_secondary.src.advanced_predictions import AdvancedPredictions
 
 # Pydantic models
 class PredictRequest(BaseModel):
@@ -28,6 +29,14 @@ class PredictRequest(BaseModel):
     
     class Config:
         extra = "allow"  # Allow extra fields
+
+class PredictPreviousYearsRequest(BaseModel):
+    items: list
+    target_date: str
+
+class PredictLastNMonthsRequest(BaseModel):
+    items: list
+    n_months: int = 4
 
 # Configuration
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -66,6 +75,7 @@ except Exception as e:
 
 db = DatabaseManager()
 analytics = AnalyticsEngine(db)
+advanced_pred = AdvancedPredictions()
 
 # FastAPI app
 app = FastAPI(
@@ -1117,6 +1127,68 @@ def get_model_info():
         },
         "hybrid_ratio": "70% XGBoost + 30% Prophet"
     }
+
+# ============================================================================
+# PART 6: ADVANCED PREDICTIONS (BULK PREDICTION V2)
+# ============================================================================
+
+@app.post("/predict-previous-years")
+async def predict_previous_years(request: PredictPreviousYearsRequest):
+    """Predict based on same month across all available years"""
+    try:
+        print(f"\n[PREDICT-PREVIOUS-YEARS] Items: {len(request.items)}, Date: {request.target_date}")
+        
+        results = advanced_pred.batch_predict_previous_years(request.items, request.target_date)
+        
+        print(f"[PREDICT-PREVIOUS-YEARS] Generated {len(results)} predictions")
+        
+        return {
+            "status": "success",
+            "type": "previous_years",
+            "target_date": request.target_date,
+            "total_items": len(results),
+            "predictions": results
+        }
+    except Exception as e:
+        print(f"[ERROR] Previous years prediction failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e), "status": "failed"}
+        )
+
+@app.post("/predict-last-n-months")
+async def predict_last_n_months(request: PredictLastNMonthsRequest):
+    """Predict based on last N months of data"""
+    try:
+        print(f"\n[PREDICT-LAST-N-MONTHS] Items: {len(request.items)}, Months: {request.n_months}")
+        
+        if request.n_months < 1 or request.n_months > 24:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "n_months must be between 1 and 24"}
+            )
+        
+        results = advanced_pred.batch_predict_last_n_months(request.items, request.n_months)
+        
+        print(f"[PREDICT-LAST-N-MONTHS] Generated {len(results)} predictions")
+        
+        return {
+            "status": "success",
+            "type": "last_n_months",
+            "n_months": request.n_months,
+            "total_items": len(results),
+            "predictions": results
+        }
+    except Exception as e:
+        print(f"[ERROR] Last N months prediction failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e), "status": "failed"}
+        )
 
 if __name__ == "__main__":
     import uvicorn

@@ -111,7 +111,7 @@ const FiltersBar = ({
         <div className="filter-group">
           <label>&nbsp;</label>
           <button onClick={onExport} className="export-btn">
-            📥 Export CSV
+            📥 Export All Data
           </button>
         </div>
       </div>
