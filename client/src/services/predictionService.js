@@ -81,7 +81,7 @@ export const predictionService = {
   },
 
   /**
-   * Export predictions to CSV
+   * Export predictions to CSV with historical data
    */
   exportToCSV(predictions, filename = 'predictions.csv') {
     const headers = [
@@ -93,18 +93,39 @@ export const predictionService = {
       'Growth Rate',
       'Recommended Order',
       'Confidence',
+      '2024 Total Sales',
+      '2025 Total Sales',
+      'Month 1 Name',
+      'Month 1 Sales',
+      'Month 2 Name',
+      'Month 2 Sales',
+      'Month 3 Name',
+      'Month 3 Sales',
     ];
 
-    const rows = predictions.map(p => [
-      p.item_name,
-      p.category,
-      p.current_stock || 0,
-      Math.round(p.final_prediction || 0),
-      p.trend || 'stable',
-      `${((p.growth_rate || 0) * 100).toFixed(1)}%`,
-      Math.round(p.recommended_order || 0),
-      `${((p.confidence || 0) * 100).toFixed(1)}%`,
-    ]);
+    const rows = predictions.map(p => {
+      // Get last 3 months data
+      const last3Months = p.last_3_months || [];
+      
+      return [
+        p.item_name,
+        p.category,
+        p.current_stock || 0,
+        Math.round(p.final_prediction || 0),
+        p.trend || 'stable',
+        `${((p.growth_rate || 0) * 100).toFixed(1)}%`,
+        Math.round(p.recommended_order || 0),
+        `${((p.confidence || 0) * 100).toFixed(1)}%`,
+        p.year_2024_total || 0,
+        p.year_2025_total || 0,
+        last3Months[0]?.month_name || 'N/A',
+        last3Months[0]?.sales || 0,
+        last3Months[1]?.month_name || 'N/A',
+        last3Months[1]?.sales || 0,
+        last3Months[2]?.month_name || 'N/A',
+        last3Months[2]?.sales || 0,
+      ];
+    });
 
     const csvContent = [
       headers.join(','),

@@ -681,6 +681,23 @@ async def generate_predictions_paginated(request: PredictRequest = None, page: i
                         historical_sales[year] = {}
                     historical_sales[year][month] = int(sales) if sales else 0
                 
+                # Calculate previous 2 years totals
+                current_year = datetime.now().year
+                year_2024_total = sum(historical_sales.get(2024, {}).values())
+                year_2025_total = sum(historical_sales.get(2025, {}).values())
+                
+                # Get last 3 months of data (most recent available)
+                sorted_monthly = sorted(all_monthly_data, key=lambda x: (x['year'], x['month']), reverse=True)
+                last_3_months = []
+                for i, data in enumerate(sorted_monthly[:3]):
+                    month_name = datetime(data['year'], data['month'], 1).strftime('%b %Y')
+                    last_3_months.append({
+                        'month_name': month_name,
+                        'year': data['year'],
+                        'month': data['month'],
+                        'sales': int(data['sales']) if data['sales'] else 0
+                    })
+                
                 enhanced_pred = {
                     **pred,
                     'ml_prediction': float(base_pred),
@@ -694,7 +711,11 @@ async def generate_predictions_paginated(request: PredictRequest = None, page: i
                     'yearly_stats': yearly_stats,
                     'all_monthly_data': all_monthly_data,
                     'historical_sales': historical_sales,
-                    'recommended_order': int(max(0, trend_adjustment['adjusted_prediction'] - (pred.get('current_stock', 0) or 0)))
+                    'recommended_order': int(max(0, trend_adjustment['adjusted_prediction'] - (pred.get('current_stock', 0) or 0))),
+                    # Export-specific fields
+                    'year_2024_total': year_2024_total,
+                    'year_2025_total': year_2025_total,
+                    'last_3_months': last_3_months
                 }
                 
                 for key in ['final_prediction', 'trend_adjusted_prediction', 'ml_prediction', 'recommended_order', 'growth_rate']:
