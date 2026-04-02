@@ -704,6 +704,61 @@ const BulkPrediction = () => {
                                   </span>
                                 </div>
                               </div>
+                              <div className="stat-card">
+                                <div className="stat-label">Total Units</div>
+                                <div className="stat-value">
+                                  {state.predictionMode === 'previous_years' 
+                                    ? (pred.yearly_data?.reduce((sum, y) => sum + (y.units || 0), 0) || 'N/A')
+                                    : (pred.monthly_data?.reduce((sum, m) => sum + (m.units || 0), 0) || 'N/A')}
+                                </div>
+                              </div>
+                              <div className="stat-card">
+                                <div className="stat-label">Avg Units/Period</div>
+                                <div className="stat-value">
+                                  {state.predictionMode === 'previous_years' 
+                                    ? (pred.yearly_data?.length > 0 
+                                        ? Math.round(pred.yearly_data.reduce((sum, y) => sum + (y.units || 0), 0) / pred.yearly_data.length)
+                                        : 'N/A')
+                                    : (pred.monthly_data?.length > 0 
+                                        ? Math.round(pred.monthly_data.reduce((sum, m) => sum + (m.units || 0), 0) / pred.monthly_data.length)
+                                        : 'N/A')}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Confidence Analysis */}
+                            <div className="confidence-analysis">
+                              <h4>🎯 Confidence Analysis</h4>
+                              <div className="confidence-details">
+                                <div className="confidence-score">
+                                  <span className="confidence-label">Confidence Score:</span>
+                                  <span className={`confidence-value ${pred.confidence > 0.8 ? 'high' : pred.confidence > 0.6 ? 'medium' : 'low'}`}>
+                                    {((pred.confidence || 0) * 100).toFixed(1)}%
+                                  </span>
+                                </div>
+                                <div className="confidence-explanation">
+                                  {pred.confidence > 0.8 ? (
+                                    <p>✅ <strong>High Confidence:</strong> Data is consistent with low variation. Predictions are reliable.</p>
+                                  ) : pred.confidence > 0.6 ? (
+                                    <p>⚠️ <strong>Medium Confidence:</strong> Moderate variation in historical data. Predictions should be used with caution.</p>
+                                  ) : (
+                                    <p>❌ <strong>Low Confidence:</strong> High variation in historical data (CV: {pred.statistics?.std_dev && pred.statistics?.average_sales 
+                                      ? ((pred.statistics.std_dev / pred.statistics.average_sales) * 100).toFixed(1) 
+                                      : 'N/A'}%). Predictions may be unreliable.</p>
+                                  )}
+                                  <p className="confidence-note">
+                                    <strong>Why?</strong> Confidence = 1 - (Std Dev / Average). 
+                                    {pred.statistics?.std_dev && pred.statistics?.average_sales ? (
+                                      ` Current: 1 - (${pred.statistics.std_dev.toFixed(2)} / ${pred.statistics.average_sales.toFixed(2)}) = ${pred.confidence.toFixed(3)}`
+                                    ) : ' Insufficient data for calculation.'}
+                                  </p>
+                                  {pred.confidence < 0.7 && (
+                                    <p className="confidence-recommendation">
+                                      💡 <strong>Recommendation:</strong> Consider collecting more data or investigating factors causing high variation (seasonality, promotions, supply issues).
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
                             </div>
 
                             {/* Data Table */}
