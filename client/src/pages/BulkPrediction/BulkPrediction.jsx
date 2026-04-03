@@ -35,6 +35,7 @@ const initialState = {
   predictionMode: null,
   predictionResults: [],
   predictionLoading: false,
+  predictionProgress: null, // { current: 0, total: 0, percentage: 0 }
   showPreviousYearsModal: false,
   showLastNMonthsModal: false,
   selectedDate: new Date().toISOString().split('T')[0],
@@ -103,6 +104,9 @@ const reducer = (state, action) => {
     case 'SET_PREDICTION_LOADING':
       return { ...state, predictionLoading: action.payload };
     
+    case 'SET_PREDICTION_PROGRESS':
+      return { ...state, predictionProgress: action.payload };
+    
     case 'TOGGLE_MODAL':
       return { ...state, [action.payload.key]: action.payload.value };
     
@@ -113,7 +117,7 @@ const reducer = (state, action) => {
       return { ...state, selectedMonths: action.payload };
     
     case 'CLEAR_PREDICTION_RESULTS':
-      return { ...state, predictionResults: [], predictionMode: null, resultsPage: 1, expandedResultId: null };
+      return { ...state, predictionResults: [], predictionMode: null, resultsPage: 1, expandedResultId: null, predictionProgress: null };
     
     case 'LOAD_MORE_RESULTS':
       return { ...state, resultsPage: state.resultsPage + 1 };
@@ -314,8 +318,23 @@ const BulkPrediction = () => {
   }, [fetchPredictions]);
 
   // Previous Years Prediction
+  const abortControllerRef = React.useRef(null);
+
   const handlePredictPreviousYears = useCallback(async () => {
+    // Prevent double-clicks
+    if (state.predictionLoading) {
+      console.log('[PREDICTION] Already loading, ignoring click');
+      return;
+    }
+    
     dispatch({ type: 'SET_PREDICTION_LOADING', payload: true });
+    
+    // Create NEW abort controller for this request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    
+    let timeoutId = null;
+    
     try {
       // Fetch ALL items first if not all loaded
       let allItems = state.predictions.map(d => d.item_name);
@@ -336,47 +355,102 @@ const BulkPrediction = () => {
         
         clearTimeout(timeoutId1);
         
+        if (!response.ok) throw new Error(`Failed to fetch items: ${response.status}`);
+        
         const result = await response.json();
         allItems = (result.predictions || []).map(p => p.item_name);
         console.log('[PREDICTION] Fetched all items:', allItems.length);
       }
 
-      const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-previous-years`;
+      // Fetch predictions in pages of 50 items
+      const pageSize = 50;
+      const totalPages = Math.ceil(allItems.length / pageSize);
+      let allPredictions = [];
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+      console.log(`[PREDICTION] Fetching ${totalPages} pages of predictions...`);
       
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: allItems, target_date: state.selectedDate }),
-        signal: controller.signal
-      });
+      for (let page = 1; page <= totalPages; page++) {
+        if (controller.signal.aborted) {
+          throw new DOMException('Request was cancelled', 'AbortError');
+        }
+        
+        // Update progress
+        dispatch({
+          type: 'SET_PREDICTION_PROGRESS',
+          payload: {
+            current: (page - 1) * pageSize,
+            total: allItems.length,
+            percentage: Math.round(((page - 1) / totalPages) * 100)
+          }
+        });
+        
+        const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-previous-years?page=${page}&page_size=${pageSize}`;
+        
+        console.log(`[PREDICTION] Fetching page ${page}/${totalPages}...`);
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: allItems, target_date: state.selectedDate }),
+          signal: controller.signal
+        });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) throw new Error('Prediction failed');
+        if (!response.ok) throw new Error(`Prediction failed on page ${page}: ${response.status}`);
+        
+        const result = await response.json();
+        allPredictions = allPredictions.concat(result.predictions || []);
+        
+        console.log(`[PREDICTION] Page ${page}/${totalPages} complete, total predictions: ${allPredictions.length}`);
+      }
       
-      const result = await response.json();
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      console.log('[PREDICTION] All pages fetched, total predictions:', allPredictions.length);
+      
+      if (allPredictions.length === 0) {
+        throw new Error('No predictions returned from server');
+      }
+      
+      console.log('[PREDICTION] Success! Dispatching results');
       dispatch({
         type: 'SET_PREDICTION_RESULTS',
-        payload: { results: result.predictions || [], mode: 'previous_years' }
+        payload: { results: allPredictions, mode: 'previous_years' }
       });
       dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showPreviousYearsModal', value: false } });
     } catch (error) {
-      console.error('Prediction failed:', error);
-      dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+      console.error('[PREDICTION] Error caught:', error.name, error.message);
+      if (timeoutId) clearTimeout(timeoutId);
+      
       if (error.name === 'AbortError') {
-        alert('Prediction timed out after 10 minutes. Please try with fewer items.');
+        console.log('[PREDICTION] Request was aborted');
+        alert('Prediction was cancelled.');
       } else {
         alert('Prediction failed: ' + error.message);
       }
+    } finally {
+      console.log('[PREDICTION] Cleaning up, setting loading to false');
+      dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+      dispatch({ type: 'SET_PREDICTION_PROGRESS', payload: null });
+      abortControllerRef.current = null;
     }
-  }, [state.predictions, state.selectedDate, state.hasMore, state.predictionDate]);
+  }, [state.predictions, state.selectedDate, state.hasMore, state.predictionDate, state.predictionLoading]);
 
   // Last N Months Prediction
   const handlePredictLastNMonths = useCallback(async () => {
+    // Prevent double-clicks
+    if (state.predictionLoading) {
+      console.log('[PREDICTION] Already loading, ignoring click');
+      return;
+    }
+    
     dispatch({ type: 'SET_PREDICTION_LOADING', payload: true });
+    
+    // Create NEW abort controller for this request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    
+    let timeoutId = null;
+    
     try {
       // Fetch ALL items first if not all loaded
       let allItems = state.predictions.map(d => d.item_name);
@@ -397,43 +471,85 @@ const BulkPrediction = () => {
         
         clearTimeout(timeoutId1);
         
+        if (!response.ok) throw new Error(`Failed to fetch items: ${response.status}`);
+        
         const result = await response.json();
         allItems = (result.predictions || []).map(p => p.item_name);
         console.log('[PREDICTION] Fetched all items:', allItems.length);
       }
 
-      const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-last-n-months`;
+      // Fetch predictions in pages of 50 items
+      const pageSize = 50;
+      const totalPages = Math.ceil(allItems.length / pageSize);
+      let allPredictions = [];
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+      console.log(`[PREDICTION] Fetching ${totalPages} pages of predictions...`);
       
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: allItems, n_months: state.selectedMonths }),
-        signal: controller.signal
-      });
+      for (let page = 1; page <= totalPages; page++) {
+        if (controller.signal.aborted) {
+          throw new DOMException('Request was cancelled', 'AbortError');
+        }
+        
+        // Update progress
+        dispatch({
+          type: 'SET_PREDICTION_PROGRESS',
+          payload: {
+            current: (page - 1) * pageSize,
+            total: allItems.length,
+            percentage: Math.round(((page - 1) / totalPages) * 100)
+          }
+        });
+        
+        const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-last-n-months?page=${page}&page_size=${pageSize}`;
+        
+        console.log(`[PREDICTION] Fetching page ${page}/${totalPages}...`);
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: allItems, n_months: state.selectedMonths }),
+          signal: controller.signal
+        });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) throw new Error('Prediction failed');
+        if (!response.ok) throw new Error(`Prediction failed on page ${page}: ${response.status}`);
+        
+        const result = await response.json();
+        allPredictions = allPredictions.concat(result.predictions || []);
+        
+        console.log(`[PREDICTION] Page ${page}/${totalPages} complete, total predictions: ${allPredictions.length}`);
+      }
       
-      const result = await response.json();
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      console.log('[PREDICTION] All pages fetched, total predictions:', allPredictions.length);
+      
+      if (allPredictions.length === 0) {
+        throw new Error('No predictions returned from server');
+      }
+      
+      console.log('[PREDICTION] Success! Dispatching results');
       dispatch({
         type: 'SET_PREDICTION_RESULTS',
-        payload: { results: result.predictions || [], mode: 'last_n_months' }
+        payload: { results: allPredictions, mode: 'last_n_months' }
       });
       dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showLastNMonthsModal', value: false } });
     } catch (error) {
-      console.error('Prediction failed:', error);
-      dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+      console.error('[PREDICTION] Error caught:', error.name, error.message);
+      if (timeoutId) clearTimeout(timeoutId);
+      
       if (error.name === 'AbortError') {
-        alert('Prediction timed out after 10 minutes. Please try with fewer items.');
+        console.log('[PREDICTION] Request was aborted');
+        alert('Prediction was cancelled.');
       } else {
         alert('Prediction failed: ' + error.message);
       }
+    } finally {
+      console.log('[PREDICTION] Cleaning up, setting loading to false');
+      dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+      dispatch({ type: 'SET_PREDICTION_PROGRESS', payload: null });
+      abortControllerRef.current = null;
     }
-  }, [state.predictions, state.selectedMonths, state.hasMore, state.predictionDate]);
+  }, [state.predictions, state.selectedMonths, state.hasMore, state.predictionDate, state.predictionLoading]);
 
   // Export prediction results
   const exportPredictionResults = useCallback(() => {
@@ -596,12 +712,25 @@ const BulkPrediction = () => {
                 onClick={handlePredictPreviousYears}
                 disabled={state.predictionLoading}
               >
-                {state.predictionLoading ? '⏳ Generating...' : '✨ Generate Prediction'}
+                {state.predictionLoading ? (
+                  state.predictionProgress ? (
+                    `⏳ Processing ${state.predictionProgress.current}/${state.predictionProgress.total} (${state.predictionProgress.percentage}%)`
+                  ) : (
+                    '⏳ Generating...'
+                  )
+                ) : (
+                  '✨ Generate Prediction'
+                )}
               </button>
               <button 
                 className="btn-secondary"
-                onClick={() => dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showPreviousYearsModal', value: false } })}
-                disabled={state.predictionLoading}
+                onClick={() => {
+                  if (abortControllerRef.current) {
+                    abortControllerRef.current.abort();
+                  }
+                  dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+                  dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showPreviousYearsModal', value: false } });
+                }}
               >
                 Cancel
               </button>
@@ -651,11 +780,25 @@ const BulkPrediction = () => {
                 onClick={handlePredictLastNMonths}
                 disabled={state.predictionLoading}
               >
-                {state.predictionLoading ? '⏳ Generating...' : '✨ Generate Prediction'}
+                {state.predictionLoading ? (
+                  state.predictionProgress ? (
+                    `⏳ Processing ${state.predictionProgress.current}/${state.predictionProgress.total} (${state.predictionProgress.percentage}%)`
+                  ) : (
+                    '⏳ Generating...'
+                  )
+                ) : (
+                  '✨ Generate Prediction'
+                )}
               </button>
               <button 
                 className="btn-secondary"
-                onClick={() => dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showLastNMonthsModal', value: false } })}
+                onClick={() => {
+                  if (abortControllerRef.current) {
+                    abortControllerRef.current.abort();
+                  }
+                  dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+                  dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showLastNMonthsModal', value: false } });
+                }}
               >
                 Cancel
               </button>

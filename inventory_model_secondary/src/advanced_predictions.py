@@ -377,15 +377,23 @@ class AdvancedPredictions:
     def batch_predict_previous_years(self, items, target_date):
         """Batch predict for multiple items using previous years"""
         results = []
-        for item in items:
+        total = len(items)
+        for idx, item in enumerate(items):
+            if idx % 100 == 0:  # Log every 100 items
+                print(f"[BATCH-PREV-YEARS] Progress: {idx}/{total} items processed")
             result = self.predict_previous_years(item, target_date)
             results.append(result)
+        print(f"[BATCH-PREV-YEARS] Completed: {total}/{total} items processed")
         return results
     
     def batch_predict_last_n_months(self, items, n_months=4):
         """Batch predict for multiple items using last N months"""
         results = []
-        for item in items:
+        total = len(items)
+        for idx, item in enumerate(items):
+            if idx % 100 == 0:  # Log every 100 items
+                print(f"[BATCH-LAST-N] Progress: {idx}/{total} items processed")
             result = self.predict_last_n_months(item, n_months)
             results.append(result)
+        print(f"[BATCH-LAST-N] Completed: {total}/{total} items processed")
         return results

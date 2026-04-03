@@ -1155,21 +1155,36 @@ def get_model_info():
 # ============================================================================
 
 @app.post("/predict-previous-years")
-async def predict_previous_years(request: PredictPreviousYearsRequest):
-    """Predict based on same month across all available years"""
+async def predict_previous_years(request: PredictPreviousYearsRequest, page: int = 1, page_size: int = 50):
+    """Predict based on same month across all available years - with pagination"""
     try:
-        print(f"\n[PREDICT-PREVIOUS-YEARS] Items: {len(request.items)}, Date: {request.target_date}")
+        total_items = len(request.items)
+        print(f"\n[PREDICT-PREVIOUS-YEARS] Total Items: {total_items}, Date: {request.target_date}, Page: {page}, PageSize: {page_size}")
         
-        results = advanced_pred.batch_predict_previous_years(request.items, request.target_date)
+        # Calculate pagination
+        start_idx = (page - 1) * page_size
+        end_idx = min(start_idx + page_size, total_items)
+        page_items = request.items[start_idx:end_idx]
         
-        print(f"[PREDICT-PREVIOUS-YEARS] Generated {len(results)} predictions")
+        print(f"[PREDICT-PREVIOUS-YEARS] Processing items {start_idx} to {end_idx}")
+        
+        results = advanced_pred.batch_predict_previous_years(page_items, request.target_date)
+        
+        print(f"[PREDICT-PREVIOUS-YEARS] Generated {len(results)} predictions for page {page}")
         
         return {
             "status": "success",
             "type": "previous_years",
             "target_date": request.target_date,
-            "total_items": len(results),
-            "predictions": results
+            "predictions": results,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total_items,
+                "total_pages": (total_items + page_size - 1) // page_size,
+                "has_next": end_idx < total_items,
+                "has_prev": page > 1
+            }
         }
     except Exception as e:
         print(f"[ERROR] Previous years prediction failed: {e}")
@@ -1181,10 +1196,11 @@ async def predict_previous_years(request: PredictPreviousYearsRequest):
         )
 
 @app.post("/predict-last-n-months")
-async def predict_last_n_months(request: PredictLastNMonthsRequest):
-    """Predict based on last N months of data"""
+async def predict_last_n_months(request: PredictLastNMonthsRequest, page: int = 1, page_size: int = 50):
+    """Predict based on last N months of data - with pagination"""
     try:
-        print(f"\n[PREDICT-LAST-N-MONTHS] Items: {len(request.items)}, Months: {request.n_months}")
+        total_items = len(request.items)
+        print(f"\n[PREDICT-LAST-N-MONTHS] Total Items: {total_items}, Months: {request.n_months}, Page: {page}, PageSize: {page_size}")
         
         if request.n_months < 1 or request.n_months > 24:
             return JSONResponse(
@@ -1192,16 +1208,30 @@ async def predict_last_n_months(request: PredictLastNMonthsRequest):
                 content={"error": "n_months must be between 1 and 24"}
             )
         
-        results = advanced_pred.batch_predict_last_n_months(request.items, request.n_months)
+        # Calculate pagination
+        start_idx = (page - 1) * page_size
+        end_idx = min(start_idx + page_size, total_items)
+        page_items = request.items[start_idx:end_idx]
         
-        print(f"[PREDICT-LAST-N-MONTHS] Generated {len(results)} predictions")
+        print(f"[PREDICT-LAST-N-MONTHS] Processing items {start_idx} to {end_idx}")
+        
+        results = advanced_pred.batch_predict_last_n_months(page_items, request.n_months)
+        
+        print(f"[PREDICT-LAST-N-MONTHS] Generated {len(results)} predictions for page {page}")
         
         return {
             "status": "success",
             "type": "last_n_months",
             "n_months": request.n_months,
-            "total_items": len(results),
-            "predictions": results
+            "predictions": results,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total_items,
+                "total_pages": (total_items + page_size - 1) // page_size,
+                "has_next": end_idx < total_items,
+                "has_prev": page > 1
+            }
         }
     except Exception as e:
         print(f"[ERROR] Last N months prediction failed: {e}")
