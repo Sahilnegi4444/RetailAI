@@ -21,7 +21,7 @@ const API = getApiUrl();
 // Create a clean axios instance for Production API
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 300000,  // Increased to 5 minutes for model retraining
+  timeout: 600000,  // Increased to 10 minutes for model retraining
   // Don't set default Content-Type - let each request set its own
 });
 

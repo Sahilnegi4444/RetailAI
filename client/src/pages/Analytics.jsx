@@ -18,7 +18,11 @@ const Analytics = () => {
 
   const loadItems = async () => {
     try {
-      const response = await fetch("http://localhost:8003/analytics/database/items");
+      const baseURL = window.location.port === '5016' 
+        ? '/api'  // Docker - use nginx proxy
+        : 'http://localhost:8001';  // Local dev - direct to backend
+      
+      const response = await fetch(`${baseURL}/analytics/database/items`);
       const data = await response.json();
       setItems(data.items || []);
       if (data.items && data.items.length > 0) {
@@ -36,9 +40,13 @@ const Analytics = () => {
     setLoading(true);
     setError(null);
     try {
+      const baseURL = window.location.port === '5016' 
+        ? '/api'  // Docker - use nginx proxy
+        : 'http://localhost:8001';  // Local dev - direct to backend
+      
       const [analyticsRes, historyRes] = await Promise.all([
-        fetch(`http://localhost:8003/analytics/item/${encodeURIComponent(selectedItem)}`),
-        fetch(`http://localhost:8003/analytics/database/item/${encodeURIComponent(selectedItem)}`)
+        fetch(`${baseURL}/analytics/item/${encodeURIComponent(selectedItem)}`),
+        fetch(`${baseURL}/analytics/database/item/${encodeURIComponent(selectedItem)}`)
       ]);
       
       if (!analyticsRes.ok) throw new Error("Failed to load analytics");

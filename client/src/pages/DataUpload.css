@@ -799,3 +799,33 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Retrain Progress */
+.retrain-progress {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+}
+
+.progress-info {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.progress-info p {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  margin: 0;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.progress-info p:last-child {
+  color: #fbbf24;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}

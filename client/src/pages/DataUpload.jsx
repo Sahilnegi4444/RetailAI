@@ -142,7 +142,7 @@ const DataUpload = () => {
   };
 
   const handleRetrain = async () => {
-    if (!confirm("This will reload all data and update predictions. Continue?")) {
+    if (!confirm("This will reload all data and update predictions. This may take 1-2 minutes. Continue?")) {
       return;
     }
 
@@ -150,11 +150,20 @@ const DataUpload = () => {
     setRetrainResult(null);
 
     try {
+      console.log("[RETRAIN] Starting model retraining...");
       const result = await retrainModel();
+      console.log("[RETRAIN] Retrain completed:", result);
       setRetrainResult(result);
+      
+      // Refresh model health after successful retrain
+      if (result.status === "success") {
+        setTimeout(() => checkModelHealth(), 2000);
+      }
     } catch (error) {
-      setRetrainResult({ error: error.response?.data?.error || "Failed to retrain model" });
-      console.error(error);
+      console.error("[RETRAIN] Retrain failed:", error);
+      setRetrainResult({ 
+        error: error.response?.data?.error || error.message || "Failed to retrain model. The process may have timed out, but retraining might still be in progress. Check model health status." 
+      });
     } finally {
       setRetraining(false);
     }
@@ -433,10 +442,21 @@ const DataUpload = () => {
             disabled={retraining}
             className="btn-primary btn-large"
           >
-            {retraining ? "Retraining Model..." : "🔄 Retrain Model with Latest Data"}
+            {retraining ? "⏳ Retraining Model... (This may take 1-2 minutes)" : "🔄 Retrain Model with Latest Data"}
           </button>
 
-          {retraining && <LoadingSpinner message="Retraining model with latest data... This may take up to 60 seconds" />}
+          {retraining && (
+            <div className="retrain-progress">
+              <LoadingSpinner message="Retraining model with latest data... This may take 1-2 minutes" />
+              <div className="progress-info">
+                <p>✓ Loading all data from database</p>
+                <p>✓ Engineering features</p>
+                <p>✓ Training XGBoost model</p>
+                <p>✓ Evaluating model performance</p>
+                <p>⏳ Please wait, do not refresh the page...</p>
+              </div>
+            </div>
+          )}
 
           {retrainResult && (
             <div
