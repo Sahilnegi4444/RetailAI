@@ -74,8 +74,9 @@ except Exception as e:
     hybrid = None
 
 db = DatabaseManager()
+db.connect()  # Keep connection open for the entire API lifetime
 analytics = AnalyticsEngine(db)
-advanced_pred = AdvancedPredictions()
+advanced_pred = AdvancedPredictions(db)  # Pass shared db connection
 
 # FastAPI app
 app = FastAPI(

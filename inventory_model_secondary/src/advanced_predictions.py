@@ -9,8 +9,20 @@ from datetime import datetime, timedelta
 from inventory_model_secondary.src.database_manager import DatabaseManager
 
 class AdvancedPredictions:
-    def __init__(self, db_path="converted_dataset/inventory_sales.db"):
-        self.db = DatabaseManager(db_path)
+    def __init__(self, db=None, db_path="converted_dataset/inventory_sales.db"):
+        """
+        Initialize AdvancedPredictions with either an existing db connection or create new one
+        
+        Args:
+            db: Existing DatabaseManager instance (preferred for performance)
+            db_path: Path to database file (used only if db is None)
+        """
+        if db is not None:
+            self.db = db
+            print("[ADVANCED-PRED] Using shared database connection")
+        else:
+            self.db = DatabaseManager(db_path)
+            print("[ADVANCED-PRED] Created new database connection")
     
     def predict_previous_years(self, item_name, target_date):
         """
@@ -46,7 +58,9 @@ class AdvancedPredictions:
             }
         """
         try:
-            self.db.connect()
+            # Keep connection open - don't reconnect every time
+            if not self.db.conn:
+                self.db.connect()
             
             # Extract target month
             target_date_obj = datetime.strptime(target_date, "%Y-%m-%d")
@@ -67,7 +81,6 @@ class AdvancedPredictions:
             '''
             
             df = pd.read_sql_query(query, self.db.conn, params=(item_name.upper().strip(), str(target_month).zfill(2)))
-            self.db.disconnect()
             
             if df.empty:
                 return {
@@ -215,7 +228,9 @@ class AdvancedPredictions:
             }
         """
         try:
-            self.db.connect()
+            # Keep connection open - don't reconnect every time
+            if not self.db.conn:
+                self.db.connect()
             
             # Get last N months of data
             query = '''
@@ -233,7 +248,6 @@ class AdvancedPredictions:
             '''
             
             df = pd.read_sql_query(query, self.db.conn, params=(item_name.upper().strip(), n_months))
-            self.db.disconnect()
             
             if df.empty:
                 return {

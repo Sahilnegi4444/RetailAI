@@ -23,7 +23,9 @@ class AnalyticsEngine:
     def extract_monthly_patterns(self, item_name):
         """Extract sales for each month across all years"""
         try:
-            self.db.connect()
+            # Don't disconnect - keep connection open
+            if not self.db.conn:
+                self.db.connect()
             
             query = '''
                 SELECT 
@@ -37,7 +39,6 @@ class AnalyticsEngine:
             '''
             
             df = pd.read_sql_query(query, self.db.conn, params=(item_name,))
-            self.db.disconnect()
             
             if df.empty:
                 return None
@@ -63,7 +64,9 @@ class AnalyticsEngine:
     def extract_yearly_trends(self, item_name):
         """Extract total sales per year"""
         try:
-            self.db.connect()
+            # Don't disconnect - keep connection open
+            if not self.db.conn:
+                self.db.connect()
             
             query = '''
                 SELECT 
@@ -76,7 +79,6 @@ class AnalyticsEngine:
             '''
             
             df = pd.read_sql_query(query, self.db.conn, params=(item_name,))
-            self.db.disconnect()
             
             if df.empty:
                 return None

@@ -143,6 +143,9 @@ const BulkPrediction = () => {
       const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-paginated?page=${page}&page_size=50`;
       const body = { prediction_date: state.predictionDate };
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -150,7 +153,10 @@ const BulkPrediction = () => {
           'Accept': 'application/json',
         },
         body: JSON.stringify(body),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`API Error: ${response.status}`);
@@ -180,7 +186,11 @@ const BulkPrediction = () => {
       }
     } catch (error) {
       console.error('[BULK PREDICTION] Error:', error);
-      dispatch({ type: 'SET_ERROR', payload: error.message });
+      if (error.name === 'AbortError') {
+        dispatch({ type: 'SET_ERROR', payload: 'Request timed out after 10 minutes' });
+      } else {
+        dispatch({ type: 'SET_ERROR', payload: error.message });
+      }
     }
   }, [state.predictionDate]);
 
@@ -257,14 +267,26 @@ const BulkPrediction = () => {
   }, [state.expandedId]);
 
   const handleExport = useCallback(async () => {
+    dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      // Fetch ALL data with raw predictions
+      // Fetch ALL data with raw predictions (10 minute timeout)
       const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-paginated?page=1&page_size=10000`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prediction_date: state.predictionDate })
+        body: JSON.stringify({ prediction_date: state.predictionDate }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
 
       const result = await response.json();
       const allData = result.predictions || [];
@@ -274,9 +296,16 @@ const BulkPrediction = () => {
         allData.map(processPrediction),
         `predictions_${state.predictionDate}.csv`
       );
+      
+      dispatch({ type: 'SET_LOADING', payload: false });
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed: ' + error.message);
+      dispatch({ type: 'SET_LOADING', payload: false });
+      if (error.name === 'AbortError') {
+        alert('Export timed out. Please try with fewer items or contact support.');
+      } else {
+        alert('Export failed: ' + error.message);
+      }
     }
   }, [state.predictionDate]);
 
@@ -294,11 +323,19 @@ const BulkPrediction = () => {
       if (state.hasMore) {
         console.log('[PREDICTION] Fetching all items for prediction...');
         const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-paginated?page=1&page_size=10000`;
+        
+        const controller1 = new AbortController();
+        const timeoutId1 = setTimeout(() => controller1.abort(), 600000); // 10 minutes
+        
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prediction_date: state.predictionDate })
+          body: JSON.stringify({ prediction_date: state.predictionDate }),
+          signal: controller1.signal
         });
+        
+        clearTimeout(timeoutId1);
+        
         const result = await response.json();
         allItems = (result.predictions || []).map(p => p.item_name);
         console.log('[PREDICTION] Fetched all items:', allItems.length);
@@ -306,11 +343,17 @@ const BulkPrediction = () => {
 
       const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-previous-years`;
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: allItems, target_date: state.selectedDate })
+        body: JSON.stringify({ items: allItems, target_date: state.selectedDate }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) throw new Error('Prediction failed');
       
@@ -322,8 +365,12 @@ const BulkPrediction = () => {
       dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showPreviousYearsModal', value: false } });
     } catch (error) {
       console.error('Prediction failed:', error);
-      alert('Prediction failed: ' + error.message);
       dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+      if (error.name === 'AbortError') {
+        alert('Prediction timed out after 10 minutes. Please try with fewer items.');
+      } else {
+        alert('Prediction failed: ' + error.message);
+      }
     }
   }, [state.predictions, state.selectedDate, state.hasMore, state.predictionDate]);
 
@@ -337,11 +384,19 @@ const BulkPrediction = () => {
       if (state.hasMore) {
         console.log('[PREDICTION] Fetching all items for prediction...');
         const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-paginated?page=1&page_size=10000`;
+        
+        const controller1 = new AbortController();
+        const timeoutId1 = setTimeout(() => controller1.abort(), 600000); // 10 minutes
+        
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prediction_date: state.predictionDate })
+          body: JSON.stringify({ prediction_date: state.predictionDate }),
+          signal: controller1.signal
         });
+        
+        clearTimeout(timeoutId1);
+        
         const result = await response.json();
         allItems = (result.predictions || []).map(p => p.item_name);
         console.log('[PREDICTION] Fetched all items:', allItems.length);
@@ -349,11 +404,17 @@ const BulkPrediction = () => {
 
       const url = `${window.location.port === '5016' ? '/api' : 'http://localhost:8001'}/predict-last-n-months`;
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: allItems, n_months: state.selectedMonths })
+        body: JSON.stringify({ items: allItems, n_months: state.selectedMonths }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) throw new Error('Prediction failed');
       
@@ -365,8 +426,12 @@ const BulkPrediction = () => {
       dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showLastNMonthsModal', value: false } });
     } catch (error) {
       console.error('Prediction failed:', error);
-      alert('Prediction failed: ' + error.message);
       dispatch({ type: 'SET_PREDICTION_LOADING', payload: false });
+      if (error.name === 'AbortError') {
+        alert('Prediction timed out after 10 minutes. Please try with fewer items.');
+      } else {
+        alert('Prediction failed: ' + error.message);
+      }
     }
   }, [state.predictions, state.selectedMonths, state.hasMore, state.predictionDate]);
 
@@ -522,6 +587,7 @@ const BulkPrediction = () => {
                 value={state.selectedDate}
                 onChange={(e) => dispatch({ type: 'SET_SELECTED_DATE', payload: e.target.value })}
                 className="date-input"
+                disabled={state.predictionLoading}
               />
             </div>
             <div className="modal-actions">
@@ -535,6 +601,7 @@ const BulkPrediction = () => {
               <button 
                 className="btn-secondary"
                 onClick={() => dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showPreviousYearsModal', value: false } })}
+                disabled={state.predictionLoading}
               >
                 Cancel
               </button>
@@ -555,6 +622,7 @@ const BulkPrediction = () => {
                 <button 
                   className="spinner-btn"
                   onClick={() => dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.max(1, state.selectedMonths - 1) })}
+                  disabled={state.predictionLoading}
                 >
                   −
                 </button>
@@ -566,10 +634,12 @@ const BulkPrediction = () => {
                   value={state.selectedMonths}
                   onChange={(e) => dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.min(24, Math.max(1, parseInt(e.target.value) || 1)) })}
                   className="month-input"
+                  disabled={state.predictionLoading}
                 />
                 <button 
                   className="spinner-btn"
                   onClick={() => dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.min(24, state.selectedMonths + 1) })}
+                  disabled={state.predictionLoading}
                 >
                   +
                 </button>
