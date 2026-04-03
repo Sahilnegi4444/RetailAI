@@ -461,35 +461,34 @@ const DataUpload = () => {
           {retrainResult && (
             <div
               className={`result-box ${
-                retrainResult.success ? "success" : "error"
+                retrainResult.status === "success" ? "success" : "error"
               }`}
             >
-              {retrainResult.success ? (
+              {retrainResult.status === "success" ? (
                 <>
                   <h3>✅ Model Retrained Successfully!</h3>
                   <div className="result-details">
                     <p className="success-message">{retrainResult.message}</p>
-                    {retrainResult.statistics && (
+                    {retrainResult.xgboost && (
                       <div className="statistics-grid">
                         <div className="stat-item">
-                          <span className="stat-label">Total Items</span>
-                          <span className="stat-value">{retrainResult.statistics.total_items}</span>
+                          <span className="stat-label">XGBoost Accuracy</span>
+                          <span className="stat-value">{retrainResult.xgboost.accuracy}</span>
                         </div>
                         <div className="stat-item">
-                          <span className="stat-label">Critical Items</span>
-                          <span className="stat-value critical">{retrainResult.statistics.critical_items}</span>
+                          <span className="stat-label">MAE</span>
+                          <span className="stat-value">{retrainResult.xgboost.mae} units</span>
                         </div>
                         <div className="stat-item">
-                          <span className="stat-label">Grocery Items</span>
-                          <span className="stat-value">{retrainResult.statistics.grocery_items}</span>
+                          <span className="stat-label">RMSE</span>
+                          <span className="stat-value">{retrainResult.xgboost.rmse} units</span>
                         </div>
                         <div className="stat-item">
-                          <span className="stat-label">Liquor Items</span>
-                          <span className="stat-value">{retrainResult.statistics.liquor_items}</span>
+                          <span className="stat-label">Prophet Status</span>
+                          <span className="stat-value">{retrainResult.prophet?.status || 'N/A'}</span>
                         </div>
                       </div>
                     )}
-                    <p className="note-message">{retrainResult.note}</p>
                   </div>
                 </>
               ) : (
