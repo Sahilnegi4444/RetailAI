@@ -81,14 +81,16 @@ export const predictionService = {
   },
 
   /**
-   * Export predictions to CSV with historical data
+   * Export predictions to CSV with historical data and cost calculations
    */
   exportToCSV(predictions, filename = 'predictions.csv') {
     const headers = [
       'Item Name',
       'Category',
+      'Unit Cost (₹)',
       'Current Stock',
-      'Predicted Demand',
+      'Predicted Demand (Units)',
+      'Total Cost (₹)',
       'Trend',
       'Growth Rate',
       'Recommended Order',
@@ -103,15 +105,27 @@ export const predictionService = {
       'Month 3 Sales',
     ];
 
+    let totalNetCost = 0;
+    let totalPredictedDemand = 0;
+
     const rows = predictions.map(p => {
       // Get last 3 months data
       const last3Months = p.last_3_months || [];
       
+      const unitCost = p.price || 0;
+      const predictedDemand = Math.round(p.final_prediction || 0);
+      const totalCost = unitCost * predictedDemand;
+      
+      totalNetCost += totalCost;
+      totalPredictedDemand += predictedDemand;
+      
       return [
         p.item_name,
         p.category,
+        unitCost.toFixed(2),
         p.current_stock || 0,
-        Math.round(p.final_prediction || 0),
+        predictedDemand,
+        totalCost.toFixed(2),
         p.trend || 'stable',
         `${((p.growth_rate || 0) * 100).toFixed(1)}%`,
         Math.round(p.recommended_order || 0),
@@ -127,9 +141,32 @@ export const predictionService = {
       ];
     });
 
+    // Add summary row
+    const summaryRow = [
+      'TOTAL',
+      '',
+      '',
+      '',
+      totalPredictedDemand,
+      totalNetCost.toFixed(2),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ];
+
     const csvContent = [
       headers.join(','),
       ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+      summaryRow.map(cell => `"${cell}"`).join(','),
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

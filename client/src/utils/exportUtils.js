@@ -95,7 +95,7 @@ export const downloadFile = (content, filename, mimeType) => {
 
 export const generatePredictionReport = (predictions, reportType = 'previous_years') => {
   /**
-   * Generate a formatted report for predictions
+   * Generate a formatted report for predictions with cost calculations
    */
   const timestamp = new Date().toLocaleString('en-IN');
   const reportData = [];
@@ -109,19 +109,26 @@ export const generatePredictionReport = (predictions, reportType = 'previous_yea
 
   reportData.push({}); // Empty row for spacing
 
+  let totalNetCost = 0;
+
   // Add predictions
   for (const pred of predictions) {
+    const unitCost = pred.price || 0;
+    const predictedDemand = pred.prediction || 0;
+    const totalCost = unitCost * predictedDemand;
+    totalNetCost += totalCost;
+
     if (reportType === 'previous_years') {
       reportData.push({
         'Item Name': pred.item_name,
         'Target Month': pred.target_month,
+        'Unit Cost (₹)': unitCost.toFixed(2),
+        'Predicted Demand (Units)': Math.round(predictedDemand),
+        'Total Cost (₹)': totalCost.toFixed(2),
         'Low Sales': pred.statistics?.low_sales || 0,
         'High Sales': pred.statistics?.high_sales || 0,
         'Average Sales': pred.statistics?.average_sales || 0,
-        'Median Sales': pred.statistics?.median_sales || 0,
-        'Std Dev': pred.statistics?.std_dev || 0,
         'Trend': pred.statistics?.trend || 'N/A',
-        'Prediction': pred.prediction || 0,
         'Confidence': `${(pred.confidence * 100).toFixed(1)}%`
       });
 
@@ -132,7 +139,7 @@ export const generatePredictionReport = (predictions, reportType = 'previous_yea
           'Year': 'Year',
           'Month': 'Month',
           'Units': 'Units',
-          'Sales': 'Sales'
+          'Sales (₹)': 'Sales'
         });
 
         for (const year of pred.yearly_data) {
@@ -141,7 +148,7 @@ export const generatePredictionReport = (predictions, reportType = 'previous_yea
             'Year': year.year,
             'Month': year.month,
             'Units': year.units,
-            'Sales': year.sales
+            'Sales (₹)': year.sales.toFixed(2)
           });
         }
       }
@@ -149,13 +156,13 @@ export const generatePredictionReport = (predictions, reportType = 'previous_yea
       reportData.push({
         'Item Name': pred.item_name,
         'Months Analyzed': pred.n_months,
+        'Unit Cost (₹)': unitCost.toFixed(2),
+        'Predicted Demand (Units)': Math.round(predictedDemand),
+        'Total Cost (₹)': totalCost.toFixed(2),
         'Low Sales': pred.statistics?.low_sales || 0,
         'High Sales': pred.statistics?.high_sales || 0,
         'Average Sales': pred.statistics?.average_sales || 0,
-        'Median Sales': pred.statistics?.median_sales || 0,
-        'Std Dev': pred.statistics?.std_dev || 0,
         'Trend': pred.statistics?.trend || 'N/A',
-        'Prediction': pred.prediction || 0,
         'Confidence': `${(pred.confidence * 100).toFixed(1)}%`
       });
 
@@ -167,7 +174,7 @@ export const generatePredictionReport = (predictions, reportType = 'previous_yea
           'Year': 'Year',
           'Month': 'Month',
           'Units': 'Units',
-          'Sales': 'Sales'
+          'Sales (₹)': 'Sales'
         });
 
         for (const month of pred.monthly_data) {
@@ -177,7 +184,7 @@ export const generatePredictionReport = (predictions, reportType = 'previous_yea
             'Year': month.year,
             'Month': month.month,
             'Units': month.units,
-            'Sales': month.sales
+            'Sales (₹)': month.sales.toFixed(2)
           });
         }
       }
@@ -185,6 +192,15 @@ export const generatePredictionReport = (predictions, reportType = 'previous_yea
 
     reportData.push({}); // Empty row for spacing
   }
+
+  // Add summary section
+  reportData.push({});
+  reportData.push({
+    'SUMMARY': '═══════════════════════════════════════',
+    'Total Items': predictions.length,
+    'Total Predicted Demand': Math.round(predictions.reduce((sum, p) => sum + (p.prediction || 0), 0)),
+    'Net Total Cost (₹)': totalNetCost.toFixed(2)
+  });
 
   return reportData;
 };
