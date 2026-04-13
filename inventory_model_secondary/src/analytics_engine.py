@@ -23,8 +23,14 @@ class AnalyticsEngine:
     def extract_monthly_patterns(self, item_name):
         """Extract sales for each month across all years"""
         try:
-            # Don't disconnect - keep connection open
-            if not self.db.conn:
+            # Ensure connection is open - reconnect if needed
+            try:
+                if not self.db.conn:
+                    self.db.connect()
+                # Test connection
+                self.db.conn.execute("SELECT 1")
+            except Exception as conn_err:
+                print(f"[WARN] Database connection issue in extract_monthly_patterns: {conn_err}, reconnecting...")
                 self.db.connect()
             
             query = '''
@@ -64,8 +70,14 @@ class AnalyticsEngine:
     def extract_yearly_trends(self, item_name):
         """Extract total sales per year"""
         try:
-            # Don't disconnect - keep connection open
-            if not self.db.conn:
+            # Ensure connection is open - reconnect if needed
+            try:
+                if not self.db.conn:
+                    self.db.connect()
+                # Test connection
+                self.db.conn.execute("SELECT 1")
+            except Exception as conn_err:
+                print(f"[WARN] Database connection issue in extract_yearly_trends: {conn_err}, reconnecting...")
                 self.db.connect()
             
             query = '''

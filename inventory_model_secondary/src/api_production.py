@@ -312,7 +312,7 @@ async def upload_data(request: Request):
         db.update_daily_sales()
         
         stats = db.get_database_stats()
-        db.disconnect()
+        # Don't disconnect - keep connection open
         
         print(f"[UPLOAD] Successfully stored {len(df_clean)} records")
         
@@ -351,7 +351,8 @@ async def upload_data(request: Request):
 def get_data_preview(limit: int = 100):
     """Get preview of latest uploaded data"""
     try:
-        db.connect()
+        if not db.conn:
+            db.connect()
         
         query = f'''
             SELECT
@@ -367,7 +368,7 @@ def get_data_preview(limit: int = 100):
         '''
         
         df = pd.read_sql_query(query, db.conn)
-        db.disconnect()
+        # Don't disconnect - keep connection open for other requests
         
         if df.empty:
             return {"records": [], "total": 0}
@@ -781,7 +782,8 @@ def get_stores():
 def get_items():
     """Get items grouped by category"""
     try:
-        db.connect()
+        if not db.conn:
+            db.connect()
         
         # Get grocery items
         grocery_query = '''
@@ -821,8 +823,7 @@ def get_items():
             LIMIT 1
         '''
         top_liquor_df = pd.read_sql_query(top_liquor, db.conn)
-        
-        db.disconnect()
+        # Don't disconnect - keep connection open
         
         return {
             "grocery": {
@@ -847,9 +848,9 @@ def get_items():
 def get_all_items():
     """Get all items with statistics"""
     try:
-        # Create new database connection for this thread
-        db_local = DatabaseManager()
-        db_local.connect()
+        # Use shared db connection
+        if not db.conn:
+            db.connect()
         
         query = '''
             SELECT 
@@ -869,8 +870,8 @@ def get_all_items():
             ORDER BY total_sold DESC
         '''
         
-        df = pd.read_sql_query(query, db_local.conn)
-        db_local.disconnect()
+        df = pd.read_sql_query(query, db.conn)
+        # Don't disconnect - keep connection open
         
         items = df.to_dict('records')
         
@@ -1023,9 +1024,11 @@ def get_item_history(item_name: str):
 def get_database_info():
     """Get database information (for Database page)"""
     try:
-        db_local = DatabaseManager()
-        db_local.connect()
-        stats = db_local.get_database_stats()
+        # Use shared db connection
+        if not db.conn:
+            db.connect()
+        
+        stats = db.get_database_stats()
         
         # Get category breakdown
         category_query = '''
@@ -1033,7 +1036,7 @@ def get_database_info():
             FROM inventory_sales 
             GROUP BY category
         '''
-        category_df = pd.read_sql_query(category_query, db_local.conn)
+        category_df = pd.read_sql_query(category_query, db.conn)
         
         # Get critical items
         critical_query = '''
@@ -1041,9 +1044,8 @@ def get_database_info():
             FROM inventory_sales 
             WHERE closing_stock < 100
         '''
-        critical_df = pd.read_sql_query(critical_query, db_local.conn)
-        
-        db_local.disconnect()
+        critical_df = pd.read_sql_query(critical_query, db.conn)
+        # Don't disconnect - keep connection open
         
         grocery_count = 0
         liquor_count = 0
@@ -1106,11 +1108,12 @@ def health_check():
 def get_stats():
     """Get database statistics"""
     try:
-        # Create new database connection for this thread
-        db_local = DatabaseManager()
-        db_local.connect()
-        stats = db_local.get_database_stats()
-        db_local.disconnect()
+        # Use shared db connection
+        if not db.conn:
+            db.connect()
+        
+        stats = db.get_database_stats()
+        # Don't disconnect - keep connection open
         
         return {
             "total_records": stats['total_records'],

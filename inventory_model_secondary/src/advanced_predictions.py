@@ -58,8 +58,14 @@ class AdvancedPredictions:
             }
         """
         try:
-            # Keep connection open - don't reconnect every time
-            if not self.db.conn:
+            # Ensure connection is open - reconnect if needed
+            try:
+                if not self.db.conn:
+                    self.db.connect()
+                # Test connection by executing a simple query
+                self.db.conn.execute("SELECT 1")
+            except Exception as conn_err:
+                print(f"[WARN] Database connection issue: {conn_err}, reconnecting...")
                 self.db.connect()
             
             # Extract target month
@@ -228,8 +234,14 @@ class AdvancedPredictions:
             }
         """
         try:
-            # Keep connection open - don't reconnect every time
-            if not self.db.conn:
+            # Ensure connection is open - reconnect if needed
+            try:
+                if not self.db.conn:
+                    self.db.connect()
+                # Test connection by executing a simple query
+                self.db.conn.execute("SELECT 1")
+            except Exception as conn_err:
+                print(f"[WARN] Database connection issue: {conn_err}, reconnecting...")
                 self.db.connect()
             
             # Get last N months of data
