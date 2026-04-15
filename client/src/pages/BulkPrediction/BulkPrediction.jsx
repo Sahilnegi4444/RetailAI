@@ -615,7 +615,7 @@ const BulkPrediction = () => {
 
   // Export prediction results
   const exportPredictionResults = useCallback(() => {
-    if (state.predictionResults.length === 0) {
+    if (filteredPredictionResults.length === 0) {
       alert('No prediction results to export');
       return;
     }
@@ -630,7 +630,7 @@ const BulkPrediction = () => {
     if (state.predictionMode === 'previous_years') {
       rows.push(['Item Name', 'Year', 'Month', 'Units', 'Sales', 'Low', 'High', 'Average', 'Trend', 'Prediction', 'Confidence']);
       
-      state.predictionResults.forEach(pred => {
+      filteredPredictionResults.forEach(pred => {
         rows.push([
           pred.item_name, '', '', '', '', 
           pred.statistics?.low_sales || 0,
@@ -651,7 +651,7 @@ const BulkPrediction = () => {
     } else {
       rows.push(['Item Name', 'Date', 'Year', 'Month', 'Units', 'Sales', 'Low', 'High', 'Average', 'Trend', 'Prediction', 'Confidence']);
       
-      state.predictionResults.forEach(pred => {
+      filteredPredictionResults.forEach(pred => {
         rows.push([
           pred.item_name, '', '', '', '', '', 
           pred.statistics?.low_sales || 0,
@@ -679,17 +679,74 @@ const BulkPrediction = () => {
     link.download = `prediction-report-${state.predictionMode}-${timestamp}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [state.predictionResults, state.predictionMode, state.selectedMonths]);
+  }, [filteredPredictionResults, state.predictionMode, state.selectedMonths]);
 
-  // Paginated prediction results
+  // Paginated prediction results with frontend filtering
+  const filteredPredictionResults = useMemo(() => {
+    let results = state.predictionResults;
+
+    // Apply search filter
+    if (state.filters.search) {
+      const searchLower = state.filters.search.toLowerCase();
+      results = results.filter(item => 
+        item.item_name?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Apply category filter
+    if (state.filters.category !== 'all') {
+      results = results.filter(item => item.category === state.filters.category);
+    }
+
+    // Apply budget filter for prediction results
+    if (state.budget && state.budget > 0) {
+      // Sort by demand (final_prediction or units)
+      results = [...results].sort((a, b) => {
+        const demandA = a.units || a.final_prediction || 0;
+        const demandB = b.units || b.final_prediction || 0;
+        return demandB - demandA;
+      });
+
+      // Select items within budget
+      let totalCost = 0;
+      const selected = [];
+      for (const item of results) {
+        const itemCost = (item.units || item.final_prediction || 0) * (item.price || 0);
+        if (totalCost + itemCost <= state.budget) {
+          selected.push(item);
+          totalCost += itemCost;
+        }
+      }
+      results = selected;
+    }
+
+    // Apply sorting
+    if (state.filters.sortBy === 'name') {
+      results = [...results].sort((a, b) => 
+        a.item_name.localeCompare(b.item_name)
+      );
+    } else if (state.filters.sortBy === 'demand') {
+      results = [...results].sort((a, b) => 
+        (b.units || b.final_prediction || 0) - (a.units || a.final_prediction || 0)
+      );
+    }
+
+    // Apply sort order
+    if (state.filters.sortOrder === 'desc') {
+      results = [...results].reverse();
+    }
+
+    return results;
+  }, [state.predictionResults, state.filters, state.budget]);
+
   const paginatedResults = useMemo(() => {
     const endIndex = state.resultsPage * state.resultsPageSize;
-    return state.predictionResults.slice(0, endIndex);
-  }, [state.predictionResults, state.resultsPage, state.resultsPageSize]);
+    return filteredPredictionResults.slice(0, endIndex);
+  }, [filteredPredictionResults, state.resultsPage, state.resultsPageSize]);
 
   const hasMoreResults = useMemo(() => {
-    return paginatedResults.length < state.predictionResults.length;
-  }, [paginatedResults.length, state.predictionResults.length]);
+    return paginatedResults.length < filteredPredictionResults.length;
+  }, [paginatedResults.length, filteredPredictionResults.length]);
 
   const handleLoadMoreResults = useCallback(() => {
     dispatch({ type: 'LOAD_MORE_RESULTS' });
@@ -892,7 +949,7 @@ const BulkPrediction = () => {
           </div>
 
           <div className="results-info-banner">
-            Showing {paginatedResults.length} of {state.predictionResults.length} predictions
+            Showing {paginatedResults.length} of {filteredPredictionResults.length} predictions {state.budget && state.budget > 0 ? `(Budget: ₹${state.budget.toLocaleString()})` : ''}
           </div>
 
           <div className="prediction-results-table-container">
@@ -1164,9 +1221,9 @@ const BulkPrediction = () => {
             </div>
           )}
 
-          {!hasMoreResults && state.predictionResults.length > 50 && (
+          {!hasMoreResults && filteredPredictionResults.length > 50 && (
             <div className="all-loaded-message">
-              ✅ All {state.predictionResults.length} predictions displayed
+              ✅ All {filteredPredictionResults.length} predictions displayed
             </div>
           )}
         </div>
