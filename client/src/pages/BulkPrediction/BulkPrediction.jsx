@@ -26,6 +26,10 @@ const initialState = {
     sortBy: 'priority',
     sortOrder: 'asc',
   },
+  // Budget filtering
+  budget: null, // in rupees
+  budgetFiltered: [],
+  budgetSummary: null,
   // Pagination states
   currentPage: 1,
   hasMore: true,
@@ -124,6 +128,12 @@ const reducer = (state, action) => {
     
     case 'TOGGLE_RESULT_EXPAND':
       return { ...state, expandedResultId: state.expandedResultId === action.payload ? null : action.payload };
+    
+    case 'SET_BUDGET':
+      return { ...state, budget: action.payload, budgetFiltered: [], budgetSummary: null };
+    
+    case 'SET_BUDGET_FILTERED':
+      return { ...state, budgetFiltered: action.payload.items, budgetSummary: action.payload.summary };
     
     default:
       return state;
@@ -254,9 +264,55 @@ const BulkPrediction = () => {
     return calculateSummary(processedProducts);
   }, [processedProducts]);
 
+  // Smart budget filtering - prioritize by demand
+  const budgetFilteredProducts = useMemo(() => {
+    if (!state.budget || state.budget <= 0) {
+      return { items: processedProducts, summary: null };
+    }
+
+    // Sort by demand (final_prediction) descending to prioritize high-demand items
+    const sorted = [...processedProducts].sort((a, b) => 
+      (b.final_prediction || 0) - (a.final_prediction || 0)
+    );
+
+    let totalCost = 0;
+    const selected = [];
+    const summary = {
+      budget: state.budget,
+      spent: 0,
+      remaining: state.budget,
+      itemsSelected: 0,
+      itemsSkipped: 0,
+      totalDemand: 0,
+      totalRevenue: 0,
+    };
+
+    for (const item of sorted) {
+      const itemCost = (item.final_prediction || 0) * (item.price || 0);
+      
+      if (totalCost + itemCost <= state.budget) {
+        selected.push(item);
+        totalCost += itemCost;
+        summary.spent = totalCost;
+        summary.remaining = state.budget - totalCost;
+        summary.itemsSelected += 1;
+        summary.totalDemand += item.final_prediction || 0;
+        summary.totalRevenue += itemCost;
+      } else {
+        summary.itemsSkipped += 1;
+      }
+    }
+
+    return { items: selected, summary };
+  }, [processedProducts, state.budget]);
+
   // Handlers
   const handleFilterChange = useCallback((key, value) => {
     dispatch({ type: 'UPDATE_FILTER', payload: { key, value } });
+  }, []);
+
+  const handleBudgetChange = useCallback((budget) => {
+    dispatch({ type: 'SET_BUDGET', payload: budget });
   }, []);
 
   const handleDateChange = useCallback((date) => {
@@ -294,11 +350,79 @@ const BulkPrediction = () => {
 
       const result = await response.json();
       const allData = result.predictions || [];
+      const processed = allData.map(processPrediction);
 
-      // Export raw backend data
+      // Determine which data to export
+      const dataToExport = state.budget && state.budget > 0 
+        ? budgetFilteredProducts.items 
+        : processed;
+
+      // Create enhanced export with historical data
+      const enhancedData = dataToExport.map(item => ({
+        'Item Name': item.item_name,
+        'Category': item.category,
+        'Final Prediction': item.final_prediction,
+        'Trend': item.trend,
+        'Current Stock': item.current_stock,
+        'Recommended Order': item.recommended_order,
+        'Price': item.price,
+        'Confidence': item.confidence,
+        'Stock Status': item.stock_status,
+        // Historical data
+        '2024 Total': item.year_2024_total || 0,
+        '2025 Total': item.year_2025_total || 0,
+        'Last 3 Months': item.last_3_months?.map(m => `${m.month_name}: ${m.sales}`).join(' | ') || 'N/A',
+        // Budget info
+        'Unit Cost': item.price,
+        'Total Cost': (item.final_prediction || 0) * (item.price || 0),
+      }));
+
+      // Add summary row
+      const summaryRow = {
+        'Item Name': '=== SUMMARY ===',
+        'Category': '',
+        'Final Prediction': enhancedData.reduce((sum, row) => sum + (row['Final Prediction'] || 0), 0),
+        'Trend': '',
+        'Current Stock': enhancedData.reduce((sum, row) => sum + (row['Current Stock'] || 0), 0),
+        'Recommended Order': enhancedData.reduce((sum, row) => sum + (row['Recommended Order'] || 0), 0),
+        'Price': '',
+        'Confidence': '',
+        'Stock Status': '',
+        '2024 Total': enhancedData.reduce((sum, row) => sum + (row['2024 Total'] || 0), 0),
+        '2025 Total': enhancedData.reduce((sum, row) => sum + (row['2025 Total'] || 0), 0),
+        'Last 3 Months': '',
+        'Unit Cost': '',
+        'Total Cost': enhancedData.reduce((sum, row) => sum + (row['Total Cost'] || 0), 0),
+      };
+
+      // Add budget summary if applicable
+      if (state.budget && state.budget > 0 && budgetFilteredProducts.summary) {
+        const budgetSummary = budgetFilteredProducts.summary;
+        const budgetRow = {
+          'Item Name': '=== BUDGET SUMMARY ===',
+          'Category': '',
+          'Final Prediction': '',
+          'Trend': '',
+          'Current Stock': '',
+          'Recommended Order': '',
+          'Price': `Budget: ₹${budgetSummary.budget.toLocaleString()}`,
+          'Confidence': `Spent: ₹${budgetSummary.spent.toLocaleString()}`,
+          'Stock Status': `Remaining: ₹${budgetSummary.remaining.toLocaleString()}`,
+          '2024 Total': `Items Selected: ${budgetSummary.itemsSelected}`,
+          '2025 Total': `Items Skipped: ${budgetSummary.itemsSkipped}`,
+          'Last 3 Months': `Total Demand: ${budgetSummary.totalDemand}`,
+          'Unit Cost': '',
+          'Total Cost': `Total Revenue: ₹${budgetSummary.totalRevenue.toLocaleString()}`,
+        };
+        enhancedData.push(budgetRow);
+      }
+
+      enhancedData.push(summaryRow);
+
+      // Export to CSV
       predictionService.exportToCSV(
-        allData.map(processPrediction),
-        `predictions_${state.predictionDate}.csv`
+        enhancedData,
+        `predictions_${state.predictionDate}${state.budget ? '_budget' : ''}.csv`
       );
       
       dispatch({ type: 'SET_LOADING', payload: false });
@@ -311,7 +435,7 @@ const BulkPrediction = () => {
         alert('Export failed: ' + error.message);
       }
     }
-  }, [state.predictionDate]);
+  }, [state.predictionDate, state.budget, budgetFilteredProducts]);
 
   const handleRefresh = useCallback(() => {
     fetchPredictions(1);
@@ -666,7 +790,10 @@ const BulkPrediction = () => {
         predictionDate={state.predictionDate}
         onDateChange={handleDateChange}
         totalItems={state.totalRecords || state.predictions.length}
-        filteredItems={processedProducts.length}
+        filteredItems={state.budget && state.budget > 0 ? budgetFilteredProducts.items.length : processedProducts.length}
+        budget={state.budget}
+        onBudgetChange={handleBudgetChange}
+        budgetSummary={budgetFilteredProducts.summary}
       />
 
       {/* Prediction Buttons */}
@@ -1118,7 +1245,7 @@ const BulkPrediction = () => {
           ) : (
             <>
               <ProductsTable
-                products={processedProducts}
+                products={state.budget && state.budget > 0 ? budgetFilteredProducts.items : processedProducts}
                 expandedId={state.expandedId}
                 onToggleExpand={handleToggleExpand}
                 predictionDate={state.predictionDate}

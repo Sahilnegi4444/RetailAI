@@ -8,8 +8,25 @@ const FiltersBar = ({
   predictionDate, 
   onDateChange,
   totalItems,
-  filteredItems 
+  filteredItems,
+  budget,
+  onBudgetChange,
+  budgetSummary
 }) => {
+  const [budgetInput, setBudgetInput] = React.useState(budget ? (budget / 100000).toFixed(1) : '');
+
+  const handleBudgetChange = (e) => {
+    const value = e.target.value;
+    setBudgetInput(value);
+    
+    if (value === '' || value === '0') {
+      onBudgetChange(null);
+    } else {
+      const budgetInRupees = parseFloat(value) * 100000; // Convert lakhs to rupees
+      onBudgetChange(budgetInRupees);
+    }
+  };
+
   return (
     <div className="filters-bar">
       <div className="filters-row">
@@ -34,6 +51,25 @@ const FiltersBar = ({
             onChange={(e) => onFilterChange('search', e.target.value)}
             className="search-input"
           />
+        </div>
+
+        <div className="filter-group">
+          <label htmlFor="budget">💰 Budget (Lakhs)</label>
+          <input
+            id="budget"
+            type="number"
+            placeholder="e.g., 10 for 10 lakhs"
+            value={budgetInput}
+            onChange={handleBudgetChange}
+            min="0"
+            step="0.5"
+            className="budget-input"
+          />
+          {budgetSummary && (
+            <div className="budget-info">
+              ✓ {budgetSummary.itemsSelected} items | ₹{budgetSummary.spent.toLocaleString()} spent
+            </div>
+          )}
         </div>
 
         <div className="filter-group">
@@ -118,6 +154,11 @@ const FiltersBar = ({
 
       <div className="results-info">
         Showing {filteredItems} of {totalItems} items
+        {budgetSummary && (
+          <span className="budget-summary">
+            | 💰 Budget: ₹{budgetSummary.budget.toLocaleString()} | Spent: ₹{budgetSummary.spent.toLocaleString()} | Remaining: ₹{budgetSummary.remaining.toLocaleString()}
+          </span>
+        )}
       </div>
     </div>
   );
