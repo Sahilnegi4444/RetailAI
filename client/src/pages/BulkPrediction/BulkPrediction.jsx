@@ -357,71 +357,9 @@ const BulkPrediction = () => {
         ? budgetFilteredProducts.items 
         : processed;
 
-      // Create enhanced export with historical data
-      const enhancedData = dataToExport.map(item => ({
-        'Item Name': item.item_name,
-        'Category': item.category,
-        'Final Prediction': item.final_prediction,
-        'Trend': item.trend,
-        'Current Stock': item.current_stock,
-        'Recommended Order': item.recommended_order,
-        'Price': item.price,
-        'Confidence': item.confidence,
-        'Stock Status': item.stock_status,
-        // Historical data
-        '2024 Total': item.year_2024_total || 0,
-        '2025 Total': item.year_2025_total || 0,
-        'Last 3 Months': item.last_3_months?.map(m => `${m.month_name}: ${m.sales}`).join(' | ') || 'N/A',
-        // Budget info
-        'Unit Cost': item.price,
-        'Total Cost': (item.final_prediction || 0) * (item.price || 0),
-      }));
-
-      // Add summary row
-      const summaryRow = {
-        'Item Name': '=== SUMMARY ===',
-        'Category': '',
-        'Final Prediction': enhancedData.reduce((sum, row) => sum + (row['Final Prediction'] || 0), 0),
-        'Trend': '',
-        'Current Stock': enhancedData.reduce((sum, row) => sum + (row['Current Stock'] || 0), 0),
-        'Recommended Order': enhancedData.reduce((sum, row) => sum + (row['Recommended Order'] || 0), 0),
-        'Price': '',
-        'Confidence': '',
-        'Stock Status': '',
-        '2024 Total': enhancedData.reduce((sum, row) => sum + (row['2024 Total'] || 0), 0),
-        '2025 Total': enhancedData.reduce((sum, row) => sum + (row['2025 Total'] || 0), 0),
-        'Last 3 Months': '',
-        'Unit Cost': '',
-        'Total Cost': enhancedData.reduce((sum, row) => sum + (row['Total Cost'] || 0), 0),
-      };
-
-      // Add budget summary if applicable
-      if (state.budget && state.budget > 0 && budgetFilteredProducts.summary) {
-        const budgetSummary = budgetFilteredProducts.summary;
-        const budgetRow = {
-          'Item Name': '=== BUDGET SUMMARY ===',
-          'Category': '',
-          'Final Prediction': '',
-          'Trend': '',
-          'Current Stock': '',
-          'Recommended Order': '',
-          'Price': `Budget: ₹${budgetSummary.budget.toLocaleString()}`,
-          'Confidence': `Spent: ₹${budgetSummary.spent.toLocaleString()}`,
-          'Stock Status': `Remaining: ₹${budgetSummary.remaining.toLocaleString()}`,
-          '2024 Total': `Items Selected: ${budgetSummary.itemsSelected}`,
-          '2025 Total': `Items Skipped: ${budgetSummary.itemsSkipped}`,
-          'Last 3 Months': `Total Demand: ${budgetSummary.totalDemand}`,
-          'Unit Cost': '',
-          'Total Cost': `Total Revenue: ₹${budgetSummary.totalRevenue.toLocaleString()}`,
-        };
-        enhancedData.push(budgetRow);
-      }
-
-      enhancedData.push(summaryRow);
-
-      // Export to CSV
+      // Export using the original working format
       predictionService.exportToCSV(
-        enhancedData,
+        dataToExport,
         `predictions_${state.predictionDate}${state.budget ? '_budget' : ''}.csv`
       );
       
