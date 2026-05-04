@@ -46,8 +46,8 @@ def load_data():
         m = re.search(r'(jan|feb|mar|apr|may|jun|july|jul|aug|sep|oct|nov|dec)', filename, re.I)
         month_str = m.group(1).lower() if m else 'unknown'
         
-        # Extract Year
-        y = re.search(r'(24|25)', filename)
+        # Extract Year (any 2 digits following the month)
+        y = re.search(r'(24|25|26|27|28|29|30)', filename)
         year_str = '20' + y.group(1) if y else 'unknown'
         
         # Determine Category
@@ -91,6 +91,13 @@ def prepare_and_engineer(df):
     # We need a unique identifier for items
     df['Item_ID'] = df['GP_Index_No'].astype(str) + "_" + df['pluno'].astype(str)
     
+    # DEDUPLICATION: Remove identical rows (ignoring S.No which varies)
+    initial_len = len(df)
+    cols_to_check = [c for c in df.columns if c not in ['S.No', 'Month_Str']]
+    df = df.drop_duplicates(subset=cols_to_check)
+    if len(df) < initial_len:
+        print(f"Removed {initial_len - len(df)} duplicate rows.")
+
     print("\nAggregating duplicates...")
     # Aggregate duplicates per Item_ID and Date
     agg_funcs = {
@@ -100,8 +107,8 @@ def prepare_and_engineer(df):
         'R_Amt': 'sum',
         'W_Amt': 'sum',
         'Profit': 'sum',
-        'O_B': 'sum',
-        'Closing_Stock': 'sum',
+        'O_B': 'first',      # Opening balance should not be summed
+        'Closing_Stock': 'last', # Closing stock should not be summed
         'Net_Tax': 'sum',
         'W_Rate': 'mean',
         'R_Rate': 'mean',

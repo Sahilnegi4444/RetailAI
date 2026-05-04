@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { modelEvents } from "../services/modelEvents";
 import "./Database.css";
 
 const Database = () => {
@@ -14,6 +15,15 @@ const Database = () => {
 
   useEffect(() => {
     loadDatabaseInfo();
+  }, []);
+
+  // Auto-refresh when model is retrained
+  useEffect(() => {
+    const unsub = modelEvents.onModelRetrained(() => {
+      console.log('[DATABASE] 🔔 Model retrained — reloading database info');
+      loadDatabaseInfo();
+    });
+    return unsub;
   }, []);
 
   const loadDatabaseInfo = async () => {
@@ -492,8 +502,8 @@ const Database = () => {
           </div>
           <div className="stat-card">
             <div className="stat-title">Coverage</div>
-            <div className="stat-value">24 Months</div>
-            <div className="stat-description">2024-2025 complete data</div>
+            <div className="stat-value">All Years</div>
+            <div className="stat-description">Complete historical data</div>
           </div>
           <div className="stat-card">
             <div className="stat-title">Categories</div>

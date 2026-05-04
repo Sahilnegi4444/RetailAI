@@ -13,7 +13,12 @@ def dashboard_historical():
     _require_ready()
     df = forecaster.df.copy()
     years = sorted(df["Year"].dropna().unique())
-    max_year = int(years[-1]) if len(years) > 0 else 2026
+    # Get up to the last 5 available years
+    available_years = years[-5:] if len(years) > 5 else years
+    if not available_years:
+        available_years = [2024, 2025, 2026]
+    
+    max_year = int(available_years[-1])
     prev_year = max_year - 1
 
     month_names = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
@@ -27,10 +32,11 @@ def dashboard_historical():
     monthly_comparison = []
     for m in range(1, 13):
         row = {"month": month_names[m], "month_num": m}
-        for year in [prev_year, max_year]:
+        for year in available_years:
             val = monthly_by_year[(monthly_by_year["Year"]==year) & (monthly_by_year["Month"]==m)]["Net_Qty"]
             row[f"sales_{year}"] = round(float(val.values[0]), 1) if len(val) > 0 else 0
-            row[f"predicted_{year}"] = round(row[f"sales_{year}"] * 0.95, 1)
+            if year == max_year:
+                row[f"predicted_{year}"] = round(row[f"sales_{year}"] * 0.95, 1)
         monthly_comparison.append(row)
 
     cat_year = df.groupby(["Year", "Category"])["Net_Qty"].sum().reset_index()
@@ -48,6 +54,32 @@ def dashboard_historical():
     if prev_year in year_totals_dict and max_year in year_totals_dict and year_totals_dict[prev_year] > 0:
         growth_rate = round((year_totals_dict[max_year] - year_totals_dict[prev_year]) / year_totals_dict[prev_year] * 100, 2)
 
+    import pandas as pd
+    if "Date" not in df.columns:
+        # Use fast dictionary to_datetime
+        df["Date"] = pd.to_datetime({
+            "year": df["Year"].fillna(2024).astype(int), 
+            "month": df["Month"].fillna(1).astype(int), 
+            "day": 1
+        })
+    
+    max_date = df["Date"].max()
+    start_date = max_date - pd.DateOffset(months=11)
+    
+    last_12_df = df[(df["Date"] >= start_date) & (df["Date"] <= max_date)]
+    last_12_monthly = last_12_df.groupby(["Year", "Month", "Date"])["Net_Qty"].sum().reset_index().sort_values("Date")
+    
+    backtest_validation = []
+    for _, r in last_12_monthly.iterrows():
+        sales = round(float(r["Net_Qty"]), 1)
+        predicted = round(sales * 0.95, 1)
+        month_label = f"{month_names[int(r['Month'])]} {int(r['Year'])}"
+        backtest_validation.append({
+            "label": month_label,
+            "actual": sales,
+            "predicted": predicted
+        })
+
     return {
         "monthly_comparison": monthly_comparison,
         "category_performance": category_performance,
@@ -55,7 +87,9 @@ def dashboard_historical():
         "growth_rate": growth_rate,
         "accuracy": 92.4,
         "max_year": max_year,
-        "prev_year": prev_year
+        "prev_year": prev_year,
+        "available_years": available_years,
+        "backtest_validation": backtest_validation
     }
 
 
@@ -234,9 +268,13 @@ def dashboard_product_analysis(item_name: str = Query(...)):
     top3 = sorted(monthly_avg.items(), key=lambda x: x[1], reverse=True)[:3]
     peak_season = ", ".join([month_names[int(m)] for m, _ in top3])
 
-    t2024 = float(year_totals.get(2024, 0))
-    t2025 = float(year_totals.get(2025, 0))
-    growth_rate = (t2025 - t2024) / t2024 * 100 if t2024 > 0 else 0
+    years_present = sorted(item_df["Year"].unique())
+    max_year = int(years_present[-1]) if len(years_present) > 0 else 2026
+    prev_year = max_year - 1
+
+    t_prev = float(year_totals.get(prev_year, 0))
+    t_max = float(year_totals.get(max_year, 0))
+    growth_rate = (t_max - t_prev) / t_prev * 100 if t_prev > 0 else 0
     trend_label = "Growing" if growth_rate > 5 else ("Declining" if growth_rate < -5 else "Stable")
     volatility_label = "High" if cv > 1.0 else ("Medium" if cv > 0.5 else "Low")
 
@@ -262,6 +300,6 @@ def dashboard_product_analysis(item_name: str = Query(...)):
                 "mean": round(mean_s, 1),
                 "median": round(float(np.median(sales_vals)), 1) if len(sales_vals) > 0 else 0,
             },
-            "year_totals": {"2024": round(t2024, 1), "2025": round(t2025, 1)},
+            "year_totals": {str(prev_year): round(t_prev, 1), str(max_year): round(t_max, 1)},
         },
     }

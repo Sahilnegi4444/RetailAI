@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { getDataFormat, uploadMonthlyData, retrainModel } from "../api";
+import { useState, useEffect, useRef } from "react";
+import { getDataFormat, uploadMonthlyData, retrainModel, checkHealth, getDataPreview, getTrainingStatus } from "../api";
+import { modelEvents } from "../services/modelEvents";
 import LoadingSpinner from "../components/LoadingSpinner";
 import "./DataUpload.css";
 
@@ -12,20 +13,69 @@ const DataUpload = () => {
   const [dataFormat, setDataFormat] = useState(null);
   const [showFormatPreview, setShowFormatPreview] = useState(true);
   const [modelHealth, setModelHealth] = useState(null);
-  const [checkingHealth, setCheckingHealth] = useState(false);
-  
+  const [trainingStatusData, setTrainingStatusData] = useState({status: "idle", progress: 0, message: ""});
+  const [dbStats, setDbStats] = useState(null);
+  const [loadingDbStats, setLoadingDbStats] = useState(false);
+
   // Form fields
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedCategory, setSelectedCategory] = useState("Grocery");
-  
+
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+
+  // Poll training status
+  const prevStatus = useRef("idle");
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const data = await getTrainingStatus();
+        if (data && data.status) {
+          // Detect transition to "completed" and notify all pages
+          if (data.status === "completed" && prevStatus.current === "training") {
+            modelEvents.notifyModelRetrained();
+          }
+          prevStatus.current = data.status;
+          setTrainingStatusData(data);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const interval = setInterval(fetchStatus, 2000);
+    fetchStatus();
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Initial load
   useEffect(() => {
     loadDataFormat();
-    checkModelHealth();
-    
-    // Set up health check every 30 seconds
-    const healthCheckInterval = setInterval(checkModelHealth, 30000);
-    return () => clearInterval(healthCheckInterval);
+
+    const performHealthCheck = async () => {
+      try {
+        const data = await checkHealth();
+        setModelHealth({
+          status: data.status,
+          message: data.status === "healthy" ? "Model API is healthy" : "Model API not ready",
+          timestamp: new Date().toLocaleTimeString(),
+          isHealthy: data.status === "healthy"
+        });
+      } catch (e) {
+        setModelHealth({
+          status: "error",
+          message: "Model API not responding",
+          timestamp: new Date().toLocaleTimeString(),
+          isHealthy: false
+        });
+      }
+    };
+    performHealthCheck();
   }, []);
 
   const loadDataFormat = async () => {
@@ -37,49 +87,16 @@ const DataUpload = () => {
     }
   };
 
-  const checkModelHealth = async () => {
-    setCheckingHealth(true);
-    try {
-      const baseURL = window.location.port === '5016' 
-        ? '/api'  // Docker - use nginx proxy
-        : 'http://localhost:8002';  // Local dev - direct to backend
-      
-      const response = await fetch(`${baseURL}/health`);
-      const data = await response.json();
-      const isHealthy = data.status === "healthy";
-      setModelHealth({
-        status: data.status,
-        message: isHealthy
-          ? "Model API is healthy"
-          : (data.startup_error ? `Model not ready: ${data.startup_error}` : "Model API not ready"),
-        timestamp: new Date().toLocaleTimeString(),
-        isHealthy
-      });
-    } catch {
-      setModelHealth({
-        status: "error",
-        message: "Model API not responding",
-        timestamp: new Date().toLocaleTimeString(),
-        isHealthy: false
-      });
-    } finally {
-      setCheckingHealth(false);
-    }
-  };
-
   const checkUploadedFiles = async () => {
+    setLoadingDbStats(true);
     try {
-      const baseURL = window.location.port === '5016' 
-        ? '/api'  // Docker - use nginx proxy
-        : 'http://localhost:8002';  // Local dev - direct to backend
-      
-      const response = await fetch(`${baseURL}/data-preview?limit=10`);
-      const data = await response.json();
-      console.log("📁 Files in data directory:", data);
-      alert(`Data Preview:\n\nTotal Records: ${data.total || 0}\n\nColumns: ${data.columns?.join(', ') || 'N/A'}\n\nSample records loaded successfully`);
+      const data = await getDataPreview(10);
+      setDbStats(data);
     } catch (error) {
       console.error("Error checking files:", error);
-      alert("Error checking files. Check console for details.");
+      alert("Error connecting to backend. Make sure the server is running.");
+    } finally {
+      setLoadingDbStats(false);
     }
   };
 
@@ -93,8 +110,8 @@ const DataUpload = () => {
         "application/csv",
         "text/comma-separated-values"
       ];
-      if (validTypes.includes(selectedFile.type) || 
-          selectedFile.name.endsWith('.xlsx') || 
+      if (validTypes.includes(selectedFile.type) ||
+          selectedFile.name.endsWith('.xlsx') ||
           selectedFile.name.endsWith('.xls') ||
           selectedFile.name.endsWith('.csv')) {
         setFile(selectedFile);
@@ -105,7 +122,7 @@ const DataUpload = () => {
     }
   };
 
-  const handleUpload = async () => {
+  const handleUpload = async (force = false) => {
     if (!file) {
       setUploadResult({ error: "Please select a file first" });
       return;
@@ -115,16 +132,18 @@ const DataUpload = () => {
     setUploadResult(null);
 
     try {
-      console.log("Starting upload with:", {
-        filename: file.name,
-        year: selectedYear,
-        month: selectedMonth,
-        category: selectedCategory
-      });
-      
-      const result = await uploadMonthlyData(file, selectedYear, selectedMonth, selectedCategory);
-      
-      console.log("Upload result:", result);
+      const result = await uploadMonthlyData(file, selectedYear, selectedMonth, selectedCategory, force);
+
+      if (result.status === "conflict") {
+        setUploading(false);
+        if (window.confirm(result.message)) {
+          handleUpload(true);
+        } else {
+          setUploadResult({ error: "Upload cancelled by user" });
+        }
+        return;
+      }
+
       setUploadResult({
         ...result,
         success: result.status === "success",
@@ -133,14 +152,14 @@ const DataUpload = () => {
         month: selectedMonth,
         category: selectedCategory
       });
-      
+
       if (result.status === "success") {
         setFile(null);
         document.getElementById("file-input").value = "";
       }
     } catch (error) {
       console.error("Upload error details:", error);
-      const errorMessage = error.response?.data?.error || error.message || "Failed to upload file";
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || "Failed to upload file";
       setUploadResult({ error: errorMessage });
     } finally {
       setUploading(false);
@@ -148,7 +167,7 @@ const DataUpload = () => {
   };
 
   const handleRetrain = async () => {
-    if (!confirm("This will reload all data and update predictions. This may take 1-2 minutes. Continue?")) {
+    if (!confirm("This will run the full pipeline: Clean → Feature Engineering → XGBoost Training → Reload Model. This may take 2-5 minutes. Continue?")) {
       return;
     }
 
@@ -156,38 +175,56 @@ const DataUpload = () => {
     setRetrainResult(null);
 
     try {
-      console.log("[RETRAIN] Starting model retraining...");
       const result = await retrainModel();
-      console.log("[RETRAIN] Retrain completed:", result);
       setRetrainResult(result);
-      
-      // Refresh model health after successful retrain
-      if (result.status === "success" || result.status === "info") {
-        setTimeout(() => checkModelHealth(), 2000);
-      }
     } catch (error) {
       console.error("[RETRAIN] Retrain failed:", error);
-      setRetrainResult({ 
-        error: error.response?.data?.error || error.message || "Failed to retrain model. The process may have timed out, but retraining might still be in progress. Check model health status." 
+      setRetrainResult({
+        error: error.response?.data?.error || error.message || "Failed to retrain model. The process may have timed out, but retraining might still be in progress. Check the progress bar above."
       });
     } finally {
       setRetraining(false);
     }
   };
 
-  const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-  ];
-
   return (
     <div className="data-upload-page">
       <div className="page-header">
         <h1>📤 Data Upload & Model Training</h1>
         <p className="subtitle">
-          Upload monthly sales data and retrain the AI model with latest information
+          Upload raw monthly sales data to the database, then retrain the XGBoost model to update demand forecasts
         </p>
       </div>
+
+      {/* Training Progress Banner */}
+      {trainingStatusData.status === "training" && (
+        <div className="model-health-card" style={{marginBottom: '20px', borderLeft: '4px solid #4caf50'}}>
+          <div className="health-content" style={{width: '100%'}}>
+            <span className="health-icon">⚙️</span>
+            <div className="health-info" style={{width: '100%'}}>
+              <h3>Model Training in Progress</h3>
+              <p>{trainingStatusData.message}</p>
+              <div style={{width: '100%', height: '12px', backgroundColor: '#333', borderRadius: '6px', overflow: 'hidden', marginTop: '10px'}}>
+                <div style={{width: `${trainingStatusData.progress}%`, height: '100%', backgroundColor: '#4caf50', transition: 'width 0.5s ease'}}></div>
+              </div>
+              <p style={{textAlign: 'right', fontSize: '12px', marginTop: '5px', color: '#aaa'}}>{trainingStatusData.progress}% Complete</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Training Completed Banner */}
+      {trainingStatusData.status === "completed" && (
+        <div className="model-health-card healthy" style={{marginBottom: '20px', borderLeft: '4px solid #4caf50'}}>
+          <div className="health-content">
+            <span className="health-icon">✅</span>
+            <div className="health-info">
+              <h3>Training Complete</h3>
+              <p>Model has been retrained and is now serving updated predictions.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Model Health Status */}
       {modelHealth && (
@@ -200,27 +237,105 @@ const DataUpload = () => {
               <span className="health-time">Last checked: {modelHealth.timestamp}</span>
             </div>
           </div>
-          <button 
-            onClick={checkModelHealth}
-            disabled={checkingHealth}
-            className="btn-secondary btn-small"
-          >
-            {checkingHealth ? "Checking..." : "Check Now"}
-          </button>
-          <button 
+          <button
             onClick={checkUploadedFiles}
+            disabled={loadingDbStats}
             className="btn-secondary btn-small"
           >
-            📁 Check Files
+            {loadingDbStats ? "Loading..." : "📁 Check Database"}
           </button>
         </div>
       )}
 
-      {/* Format Preview Section - Always Visible */}
+      {/* Database Stats Panel */}
+      {dbStats && (
+        <div className="model-health-card" style={{marginBottom: '20px', borderLeft: '4px solid #2196f3'}}>
+          <div className="health-content" style={{width: '100%'}}>
+            <span className="health-icon">📊</span>
+            <div className="health-info" style={{width: '100%'}}>
+              <h3>Database & Model Overview</h3>
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '8px'}}>
+                <div>
+                  <p style={{fontSize: '13px', color: '#aaa'}}>Raw Archive (SQLite)</p>
+                  <p><strong>{dbStats.db_total?.toLocaleString() || 0}</strong> records</p>
+                </div>
+                <div>
+                  <p style={{fontSize: '13px', color: '#aaa'}}>Training Data (Model)</p>
+                  <p><strong>{dbStats.total?.toLocaleString() || 0}</strong> records</p>
+                </div>
+              </div>
+
+              {dbStats.upload_log && dbStats.upload_log.length > 0 && (
+                <div style={{marginTop: '12px', overflowX: 'auto'}}>
+                  <p style={{fontSize: '13px', color: '#aaa', marginBottom: '6px'}}>Recent Uploads:</p>
+                  <table className="sample-table" style={{fontSize: '12px'}}>
+                    <thead>
+                      <tr>
+                        <th>Filename</th>
+                        <th>Year</th>
+                        <th>Month</th>
+                        <th>Category</th>
+                        <th>Uploaded</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dbStats.upload_log.slice(0, 5).map((r, i) => (
+                        <tr key={i}>
+                          <td>{r.filename}</td>
+                          <td>{r.year}</td>
+                          <td>{r.month}</td>
+                          <td>{r.category}</td>
+                          <td>{r.upload_date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {dbStats.records && dbStats.records.length > 0 && (
+                <div style={{marginTop: '12px', overflowX: 'auto'}}>
+                  <p style={{fontSize: '13px', color: '#aaa', marginBottom: '6px'}}>Latest Training Records:</p>
+                  <table className="sample-table" style={{fontSize: '12px'}}>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Item</th>
+                        <th>Net Qty</th>
+                        <th>Category</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dbStats.records.slice(0, 5).map((r, i) => (
+                        <tr key={i}>
+                          <td>{r.date}</td>
+                          <td>{r.item_name}</td>
+                          <td>{r.quantity}</td>
+                          <td>{r.category}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <button
+                onClick={() => setDbStats(null)}
+                className="btn-secondary btn-small"
+                style={{marginTop: '10px', fontSize: '12px'}}
+              >
+                ✕ Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Format Preview Section */}
       <div className="format-preview-card">
         <div className="format-header">
-          <h2>📋 Expected Excel Format</h2>
-          <button 
+          <h2>📋 Expected Raw Data Format</h2>
+          <button
             className="btn-secondary"
             onClick={() => setShowFormatPreview(!showFormatPreview)}
           >
@@ -234,15 +349,16 @@ const DataUpload = () => {
               <div className="info-box">
                 <h3>📄 File Requirements</h3>
                 <ul>
-                  <li><strong>Format:</strong> Excel or CSV files</li>
-                  <li><strong>File Types:</strong> .xls, .xlsx, .csv</li>
-                  <li><strong>One file per month</strong> - System will overwrite existing data</li>
-                  <li><strong>Naming:</strong> Use format like "06 JUN.xls", "sale jun 24.xlsx", or "march_2026.csv"</li>
+                  <li><strong>Format:</strong> Excel (.xls, .xlsx) or CSV (.csv) files</li>
+                  <li><strong>Content:</strong> Raw monthly sales data from CSD store POS system</li>
+                  <li><strong>One file per month</strong> — select the correct Year, Month & Category before uploading</li>
+                  <li><strong>Naming:</strong> Any filename works (e.g. "sale_jan_26.xlsx", "06 JUN.xls", "march_data.csv")</li>
+                  <li><strong>Duplicate Check:</strong> System will warn you if data for that month already exists</li>
                 </ul>
               </div>
 
               <div className="info-box">
-                <h3>📊 Required Columns (15 total)</h3>
+                <h3>📊 Required Columns ({dataFormat?.required_columns?.length || 0} key fields)</h3>
                 <div className="columns-grid">
                   {dataFormat?.required_columns?.map((col, idx) => (
                     <div key={idx} className="column-item">
@@ -294,7 +410,8 @@ const DataUpload = () => {
         <div className="upload-card">
           <h2>📁 Upload Monthly Sales Data</h2>
           <p className="card-description">
-            Upload Excel file with monthly sales data. Select the year, month, and category for the data you're uploading.
+            Upload raw sales data for a specific month. The file will be saved to the raw data archive and stored in the SQLite database.
+            <strong> Uploading does NOT retrain the model</strong> — use the "Retrain Model" button after uploading all your files.
           </p>
 
           <div className="upload-form">
@@ -309,6 +426,7 @@ const DataUpload = () => {
                   <option value={2024}>2024</option>
                   <option value={2025}>2025</option>
                   <option value={2026}>2026</option>
+                  <option value={2027}>2027</option>
                 </select>
               </div>
 
@@ -343,7 +461,8 @@ const DataUpload = () => {
             <div className="upload-info-banner">
               <span className="info-icon">ℹ️</span>
               <span>
-                Uploading data for: <strong>{monthNames[selectedMonth - 1]} {selectedYear}</strong> - <strong>{selectedCategory}</strong>
+                Uploading raw data for: <strong>{monthNames[selectedMonth - 1]} {selectedYear}</strong> — <strong>{selectedCategory}</strong>
+                <span style={{marginLeft: '10px', fontSize: '12px', color: '#aaa'}}>(Data will be archived — model will NOT auto-retrain)</span>
               </span>
             </div>
 
@@ -373,16 +492,16 @@ const DataUpload = () => {
                   </span>
                 </div>
                 <button
-                  onClick={handleUpload}
+                  onClick={() => handleUpload(false)}
                   disabled={uploading}
                   className="btn-primary"
                 >
-                  {uploading ? "Uploading..." : "Upload Data"}
+                  {uploading ? "Uploading..." : "Upload to Database"}
                 </button>
               </div>
             )}
 
-            {uploading && <LoadingSpinner message="Uploading monthly data..." />}
+            {uploading && <LoadingSpinner message="Saving to raw data archive..." />}
 
             {uploadResult && (
               <div
@@ -392,19 +511,21 @@ const DataUpload = () => {
               >
                 {uploadResult.success ? (
                   <>
-                    <h3>✅ Upload Successful!</h3>
+                    <h3>✅ Data Saved Successfully</h3>
                     <div className="result-details">
                       <p><strong>File:</strong> {uploadResult.filename}</p>
                       <p><strong>Period:</strong> {monthNames[uploadResult.month - 1]} {uploadResult.year}</p>
                       <p><strong>Category:</strong> {uploadResult.category}</p>
                       <p className="success-message">{uploadResult.message}</p>
-                      <p className="note-message">{uploadResult.note}</p>
+                      <p className="note-message" style={{marginTop: '8px', fontSize: '13px', color: '#ffab40'}}>
+                        💡 Data has been archived. Click "Retrain Model with Latest Data" when ready to update predictions.
+                      </p>
                     </div>
                   </>
                 ) : (
                   <>
                     <h3>❌ Upload Failed</h3>
-                    <p className="error-message">{uploadResult.error}</p>
+                    <p className="error-message">{uploadResult.error || uploadResult.message || "Unknown error occurred"}</p>
                   </>
                 )}
               </div>
@@ -414,22 +535,21 @@ const DataUpload = () => {
 
         {/* Retrain Model Section */}
         <div className="retrain-card">
-          <h2>🤖 Retrain AI Model</h2>
+          <h2>🤖 Retrain Model with Latest Data</h2>
           <p className="card-description">
-            After uploading new data, retrain the model to update all predictions with the latest information.
+            Run the full ML pipeline on all archived data. This cleans raw files, engineers features, trains XGBoost, and reloads the model for live predictions.
           </p>
 
           <div className="retrain-info">
             <div className="info-item">
               <span className="info-icon">🔄</span>
               <div>
-                <h4>What happens during retraining?</h4>
+                <h4>Full Pipeline Steps</h4>
                 <ul>
-                  <li>Reloads all Excel files from data folder</li>
-                  <li>Processes and analyzes all sales records</li>
-                  <li>Updates item profiles and patterns</li>
-                  <li>Recalculates seasonal factors and trends</li>
-                  <li>Updates all predictions immediately</li>
+                  <li><strong>Step 1:</strong> Clean & Group raw files for each year/category (clean_and_group.py)</li>
+                  <li><strong>Step 2:</strong> Prepare master training dataset (prepare_dataset.py)</li>
+                  <li><strong>Step 3:</strong> Train XGBoost model with 18-feature schema (kaggle_xgboost_pipeline.py)</li>
+                  <li><strong>Step 4:</strong> Hot-reload new model into the live API</li>
                 </ul>
               </div>
             </div>
@@ -437,30 +557,25 @@ const DataUpload = () => {
             <div className="info-item">
               <span className="info-icon">⏱️</span>
               <div>
-                <h4>Processing Time</h4>
-                <p>Retraining takes 30-60 seconds to process all data. The system will remain available during this time.</p>
+                <h4>Expected Duration</h4>
+                <p>Full pipeline takes 2-5 minutes depending on dataset size. The progress bar above will track each step in real-time. The API remains available during training.</p>
               </div>
             </div>
           </div>
 
           <button
             onClick={handleRetrain}
-            disabled={retraining}
+            disabled={retraining || trainingStatusData.status === "training"}
             className="btn-primary btn-large"
           >
-            {retraining ? "⏳ Retraining Model... (This may take 1-2 minutes)" : "🔄 Retrain Model with Latest Data"}
+            {retraining || trainingStatusData.status === "training"
+              ? "⏳ Training in Progress..."
+              : "🔄 Retrain Model with Latest Data"}
           </button>
 
           {retraining && (
             <div className="retrain-progress">
-              <LoadingSpinner message="Retraining model with latest data... This may take 1-2 minutes" />
-              <div className="progress-info">
-                <p>✓ Loading all data from database</p>
-                <p>✓ Engineering features</p>
-                <p>✓ Training XGBoost model</p>
-                <p>✓ Evaluating model performance</p>
-                <p>⏳ Please wait, do not refresh the page...</p>
-              </div>
+              <LoadingSpinner message="Pipeline running... Check the progress bar at the top" />
             </div>
           )}
 
@@ -491,16 +606,16 @@ const DataUpload = () => {
 
       {/* Instructions */}
       <div className="instructions-card">
-        <h2>📋 Step-by-Step Instructions</h2>
+        <h2>📋 How It Works</h2>
         <div className="instructions-content">
           <div className="instruction-step">
             <span className="step-number">1</span>
             <div>
-              <h3>Prepare Your Data File</h3>
+              <h3>Upload Raw Sales Data</h3>
               <p>
-                Ensure your file (Excel .xls/.xlsx or CSV .csv) follows the required format (click "Show Format" above to see details).
-                The file should contain all required columns, especially <strong>Net_Qty</strong> which contains actual units sold.
-                CSV files should be comma-separated with headers in the first row.
+                Select the year, month, and category (Grocery or Liquor), then upload your raw Excel/CSV file from the CSD POS system.
+                The file is saved to <strong>data/&lt;Year&gt;/&lt;Category&gt; &lt;Year&gt;/</strong> and archived in the SQLite database.
+                No model training happens at this step.
               </p>
             </div>
           </div>
@@ -508,10 +623,10 @@ const DataUpload = () => {
           <div className="instruction-step">
             <span className="step-number">2</span>
             <div>
-              <h3>Select Period and Category</h3>
+              <h3>Upload Multiple Months (Optional)</h3>
               <p>
-                Choose the year, month, and category (Grocery or Liquor) for the data you're uploading.
-                The system will save the file in the correct location and overwrite any existing data for that period.
+                You can upload data for multiple months before retraining. Each upload is stored independently in the raw archive.
+                If you upload the same month/year/category twice, you will be asked to confirm the overwrite.
               </p>
             </div>
           </div>
@@ -519,10 +634,11 @@ const DataUpload = () => {
           <div className="instruction-step">
             <span className="step-number">3</span>
             <div>
-              <h3>Upload the File</h3>
+              <h3>Retrain the Model</h3>
               <p>
-                Click the upload area to select your Excel or CSV file, then click "Upload Data".
-                The system will validate and save your file to the appropriate folder.
+                Click <strong>"Retrain Model with Latest Data"</strong> to run the full pipeline.
+                This processes all raw files through <code>clean_and_group.py</code> → <code>prepare_dataset.py</code> → <code>kaggle_xgboost_pipeline.py</code>,
+                then hot-reloads the new model. The progress bar shows real-time status.
               </p>
             </div>
           </div>
@@ -530,21 +646,11 @@ const DataUpload = () => {
           <div className="instruction-step">
             <span className="step-number">4</span>
             <div>
-              <h3>Retrain the Model</h3>
+              <h3>Verify & Use Updated Predictions</h3>
               <p>
-                After uploading new data, click "Retrain Model" to update all predictions.
-                This will reload all data files and recalculate patterns, trends, and forecasts.
-              </p>
-            </div>
-          </div>
-
-          <div className="instruction-step">
-            <span className="step-number">5</span>
-            <div>
-              <h3>View Updated Predictions</h3>
-              <p>
-                Go to the "Bulk Order Predictions" page to see updated forecasts based on your new data.
-                All predictions will now reflect the latest sales patterns and trends.
+                Click <strong>"📁 Check Database"</strong> to verify new records are in the training data.
+                Then navigate to <strong>Bulk Order Predictions</strong> to see updated demand forecasts
+                reflecting the newly trained model.
               </p>
             </div>
           </div>
@@ -558,29 +664,29 @@ const DataUpload = () => {
           <div className="tip-item">
             <span className="tip-icon">📅</span>
             <div>
-              <h4>Monthly Updates</h4>
-              <p>Upload data at the end of each month to keep predictions accurate and up-to-date.</p>
+              <h4>Monthly Workflow</h4>
+              <p>Upload each month's raw data as it becomes available, then retrain once all files for the period are uploaded.</p>
             </div>
           </div>
           <div className="tip-item">
-            <span className="tip-icon">🔄</span>
+            <span className="tip-icon">🔒</span>
             <div>
-              <h4>Overwrite Protection</h4>
-              <p>Uploading data for the same month/year/category will replace the existing file - use this to correct errors.</p>
+              <h4>Duplicate Protection</h4>
+              <p>Uploading the same month/year/category will trigger a confirmation prompt. Your existing data won't be silently overwritten.</p>
             </div>
           </div>
           <div className="tip-item">
             <span className="tip-icon">📊</span>
             <div>
-              <h4>Data Quality</h4>
-              <p>Ensure Net_Qty column is accurate - this is the most important field for predictions.</p>
+              <h4>Key Column: Net_Qty</h4>
+              <p>Net_Qty (Qty − Refund_Qty) is the most critical field for predictions. Ensure this column is accurate in every upload.</p>
             </div>
           </div>
           <div className="tip-item">
             <span className="tip-icon">⚡</span>
             <div>
-              <h4>Immediate Effect</h4>
-              <p>After retraining, all predictions update immediately - no need to restart the system.</p>
+              <h4>Separate Upload & Train</h4>
+              <p>Upload saves raw data to the archive only. Click "Retrain" when you're ready to update the XGBoost model with all available data.</p>
             </div>
           </div>
         </div>

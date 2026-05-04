@@ -4,6 +4,7 @@ import {
   CartesianGrid, Tooltip, Legend
 } from "recharts";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { modelEvents } from "../services/modelEvents";
 import "./Analytics.css";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -56,6 +57,17 @@ const Analytics = () => {
   const searchRef = useRef(null);
 
   useEffect(() => { loadItems(); }, []);
+
+  // Auto-refresh when model is retrained
+  useEffect(() => {
+    const unsub = modelEvents.onModelRetrained(() => {
+      console.log('[ANALYTICS] 🔔 Model retrained — clearing cache & reloading');
+      analysisCache.current = {};
+      loadItems();
+      if (selectedItem) loadAnalytics(selectedItem);
+    });
+    return unsub;
+  }, [selectedItem]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

@@ -3,6 +3,7 @@ import SummaryCards from '../../components/BulkPrediction/SummaryCards';
 import FiltersBar from '../../components/BulkPrediction/FiltersBar';
 import ProductsTable from '../../components/BulkPrediction/ProductsTable';
 import { predictionService } from '../../services/predictionService';
+import { modelEvents } from '../../services/modelEvents';
 import {
   processPrediction,
   filterPredictions,
@@ -150,6 +151,16 @@ const BulkPrediction = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const observerTarget = React.useRef(null);
   const requestLockRef = React.useRef(false);
+
+  // Auto-refresh when model is retrained
+  useEffect(() => {
+    const unsub = modelEvents.onModelRetrained(() => {
+      console.log('[BULK PREDICTION] 🔔 Model retrained — reloading predictions');
+      dispatch({ type: 'SET_PREDICTIONS', payload: [] });
+      fetchPredictions(1);
+    });
+    return unsub;
+  }, []);
 
   // Fetch predictions with pagination
   const fetchPredictions = useCallback(async (page = 1) => {
@@ -312,23 +323,26 @@ const BulkPrediction = () => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
       // Determine what to export:
-      // 1. If budget is set, export the budget-filtered items
-      // 2. Otherwise, export all currently loaded predictions
-      const dataToExport = state.budget && state.budget > 0 
-        ? budgetFilteredProducts.items 
-        : processedProducts;
+      // 1. If budget is set, export the budget-filtered items (frontend handles this logic)
+      if (state.budget && state.budget > 0) {
+        const dataToExport = budgetFilteredProducts.items;
+        
+        if (!dataToExport || dataToExport.length === 0) {
+          alert('No data available to export with current budget. Wait for predictions to load first.');
+          dispatch({ type: 'SET_LOADING', payload: false });
+          return;
+        }
 
-      if (!dataToExport || dataToExport.length === 0) {
-        alert('No data available to export. Wait for predictions to load first.');
-        dispatch({ type: 'SET_LOADING', payload: false });
-        return;
+        // Export using the service's CSV generator for the budget-filtered set
+        predictionService.exportToCSV(
+          dataToExport,
+          `predictions_${state.predictionDate}_budget.csv`
+        );
+      } else {
+        // 2. BULK EXPORT from backend for all products (even those not yet loaded via scroll)
+        // This includes search and category filters
+        predictionService.exportFullAnalysisCSV(state.predictionDate, state.filters);
       }
-
-      // Export using the service's CSV generator
-      predictionService.exportToCSV(
-        dataToExport,
-        `predictions_${state.predictionDate}${state.budget ? '_budget' : ''}.csv`
-      );
       
       dispatch({ type: 'SET_LOADING', payload: false });
     } catch (error) {
@@ -336,7 +350,7 @@ const BulkPrediction = () => {
       dispatch({ type: 'SET_LOADING', payload: false });
       alert('Export failed: ' + error.message);
     }
-  }, [state.predictionDate, state.budget, budgetFilteredProducts, processedProducts]);
+  }, [state.predictionDate, state.budget, state.filters, budgetFilteredProducts]);
 
   const handleRefresh = useCallback(() => {
     fetchPredictions(1);

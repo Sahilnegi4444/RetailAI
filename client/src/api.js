@@ -380,8 +380,13 @@ export const getBulkPredictionPaginated = async (storeId, predictionDate, page =
     };
   } catch (error) {
     console.error("❌ [API] Error fetching paginated bulk prediction:", error);
-    throw error;
   }
+};
+
+export const exportFullAnalysisCSV = (predictionDate) => {
+  const url = `${API_BASE_URL}/export-csv?prediction_date=${predictionDate}`;
+  console.log("📥 [API] Triggering bulk export:", url);
+  window.open(url, '_blank');
 };
 
 export const uploadData = async (file) => {
@@ -416,12 +421,11 @@ export const trainModel = async () => {
 
 export const getTrainingStatus = async () => {
   try {
-    // Use Production API model-info endpoint
-    const res = await apiClient.get(`/model-info`);
+    const res = await apiClient.get(`/training-status`);
     return res.data;
   } catch (error) {
     console.error("Error getting training status:", error);
-    return { status: "unknown" };
+    return { status: "unknown", progress: 0, message: "Error" };
   }
 };
 
@@ -452,85 +456,67 @@ export const getModelInfo = () => {
   };
 };
 
-// Get expected data format
+// Get expected data format — matches the actual CSD POS raw files
 export const getDataFormat = async () => {
   return {
     format: "Excel or CSV files",
     file_types: [".xls", ".xlsx", ".csv"],
     required_columns: [
-      {
-        name: "Date",
-        type: "Date (DD-MM-YYYY)",
-        description: "Transaction date"
-      },
-      {
-        name: "Item_Name",
-        type: "Text",
-        description: "Product name (must match database)"
-      },
-      {
-        name: "W_Rate",
-        type: "Number",
-        description: "Wholesale rate per unit"
-      },
-      {
-        name: "R_Rate",
-        type: "Number",
-        description: "Retail rate per unit (selling price)"
-      },
-      {
-        name: "Qty",
-        type: "Number",
-        description: "Quantity purchased"
-      },
-      {
-        name: "Refund_Qty",
-        type: "Number",
-        description: "Quantity refunded"
-      },
-      {
-        name: "Net_Qty",
-        type: "Number",
-        description: "Net quantity sold (Qty - Refund_Qty) - CRITICAL FOR PREDICTIONS"
-      },
-      {
-        name: "Closing_Stock",
-        type: "Number",
-        description: "Stock remaining at end of day"
-      }
+      { name: "S.No", type: "Integer", description: "Serial number of the row" },
+      { name: "GP_Index_No", type: "Text", description: "Group index number (e.g. I/001006P)" },
+      { name: "pluno", type: "Integer", description: "PLU number — unique product identifier" },
+      { name: "Item_Name", type: "Text", description: "Product name as registered in CSD POS" },
+      { name: "W_Rate", type: "Decimal", description: "Wholesale rate per unit" },
+      { name: "R_Rate", type: "Decimal", description: "Retail (selling) rate per unit" },
+      { name: "Qty", type: "Decimal", description: "Total quantity purchased" },
+      { name: "Refund_Qty", type: "Decimal", description: "Quantity refunded/returned" },
+      { name: "Net_Qty", type: "Decimal", description: "Net quantity sold (Qty − Refund_Qty) — CRITICAL for forecasting" },
+      { name: "R_Amt", type: "Decimal", description: "Total retail amount (R_Rate × Qty)" },
+      { name: "W_Amt", type: "Decimal", description: "Total wholesale amount (W_Rate × Qty)" },
+      { name: "Profit", type: "Decimal", description: "Profit earned (R_Amt − W_Amt)" },
+      { name: "O_B", type: "Decimal", description: "Opening balance / stock at start of period" },
+      { name: "Closing_Stock", type: "Decimal", description: "Stock remaining at end of period" },
+      { name: "Net_Tax", type: "Decimal", description: "Net tax applied to the item" }
     ],
     sample_data: [
       {
-        "Date": "15-06-2025",
-        "Item_Name": "BISC.PARLE G 100GMS",
-        "W_Rate": "3.50",
-        "R_Rate": "5.19",
-        "Qty": "50",
-        "Refund_Qty": "2",
-        "Net_Qty": "48",
-        "Closing_Stock": "1318"
+        "S.No": "1",
+        "GP_Index_No": "I/001006P",
+        "pluno": "1006",
+        "Item_Name": "GELLETE PRESTO 5S R/SET",
+        "W_Rate": "48.86",
+        "R_Rate": "51.30",
+        "Qty": "2",
+        "Refund_Qty": "0",
+        "Net_Qty": "2",
+        "R_Amt": "102.60",
+        "W_Amt": "97.72",
+        "Profit": "4.88",
+        "O_B": "2",
+        "Closing_Stock": "0",
+        "Net_Tax": "0"
       }
     ],
     notes: [
-      "Net_Qty is the most important column - it represents actual units sold",
-      "Ensure all dates are in DD-MM-YYYY format",
-      "Item names must be consistent across all uploads",
-      "Closing_Stock should be the inventory at end of day",
-      "All numeric fields should contain numbers only (no currency symbols)",
-      "One file per month - uploading same month/year will overwrite previous data",
-      "CSV files should be comma-separated with headers in first row",
-      "Excel files can be .xls or .xlsx format"
+      "Net_Qty is the most critical column — it drives demand forecasting via XGBoost",
+      "Upload raw files directly from the CSD POS export — do NOT use cleaned/processed files",
+      "Each file should contain one month's data for one category (Grocery or Liquor)",
+      "Select the correct Year, Month, and Category before uploading",
+      "If a file for the same month/year/category already exists, you will be prompted to confirm overwrite",
+      "Column names must match exactly (S.No, GP_Index_No, pluno, Item_Name, etc.)",
+      "CSV files should be comma-separated with headers in the first row",
+      "Uploading data does NOT auto-retrain the model — click 'Retrain Model' separately"
     ]
   };
 };
-
 // Upload monthly data
-export const uploadMonthlyData = async (file, year, month, category) => {
+export const uploadMonthlyData = async (file, year, month, category, force = false) => {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("year", String(year));
   formData.append("month", String(month));
   formData.append("category", category);
+  if (force) formData.append("force", "true");
 
   console.log("📤 Uploading file:", {
     filename: file.name,
@@ -589,6 +575,28 @@ export const retrainModel = async () => {
     return res.data;
   } catch (error) {
     console.error("Error retraining model:", error);
+    throw error;
+  }
+};
+
+// Check model health
+export const checkHealth = async () => {
+  try {
+    const res = await apiClient.get('/health');
+    return res.data;
+  } catch (error) {
+    console.error('Error checking health:', error);
+    throw error;
+  }
+};
+
+// Get data preview
+export const getDataPreview = async (limit = 10) => {
+  try {
+    const res = await apiClient.get('/data-preview?limit=' + limit);
+    return res.data;
+  } catch (error) {
+    console.error('Error getting data preview:', error);
     throw error;
   }
 };

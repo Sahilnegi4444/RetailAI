@@ -4,6 +4,7 @@ import {
   LineChart, Line, AreaChart, Area, ComposedChart
 } from 'recharts';
 import { analyticsService } from '../../services/analyticsService';
+import { modelEvents } from '../../services/modelEvents';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import './Dashboard.css';
 
@@ -38,6 +39,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
   const cache = useRef({ historical: null, yearwise: null });
   const [historicalData, setHistoricalData] = useState(null);
@@ -46,11 +48,24 @@ const Dashboard = () => {
 
   useEffect(() => { loadInitialData(); }, []);
 
+  // Auto-refresh when model is retrained
+  useEffect(() => {
+    const unsub = modelEvents.onModelRetrained((timestamp) => {
+      console.log('[DASHBOARD] 🔔 Model retrained — clearing cache & refreshing all charts');
+      cache.current = { historical: null, yearwise: null };
+      setLastRefresh(new Date().toLocaleTimeString());
+      loadInitialData();
+    });
+    return unsub;
+  }, []);
+
   const loadInitialData = async () => {
     try {
       setLoading(true);
       const statsData = await analyticsService.getDatabaseStats();
       setStats(statsData);
+      // Force-refresh the active tab (bypass cache)
+      cache.current = { historical: null, yearwise: null };
       await loadTabData('historical');
       setError(null);
     } catch (err) {
@@ -102,6 +117,8 @@ const Dashboard = () => {
         </div>
         <div className="header-right">
           <div className="status-pill online"><span className="dot"></span> Backend Active</div>
+          {lastRefresh && <div style={{fontSize: '11px', color: '#4caf50', marginTop: '4px'}}>🔄 Refreshed: {lastRefresh}</div>}
+          <button onClick={loadInitialData} style={{marginTop: '6px', padding: '4px 12px', fontSize: '12px', background: 'transparent', border: '1px solid #3b82f6', color: '#3b82f6', borderRadius: '6px', cursor: 'pointer'}}>↻ Refresh</button>
         </div>
       </div>
 
@@ -138,48 +155,41 @@ const StatCard = ({ title, icon, value, sub, cls, valCls }) => (
 
 
 /* ── HISTORICAL TAB ── */
-const HistoricalTab = ({ data }) => (
-  <div>
-    <div className="charts-grid">
-      <div className="chart-card-new">
-        <div className="chart-header-new">
-          <div><h3>{data.prev_year} vs {data.max_year} Sales Comparison</h3><p>Side-by-side monthly unit volumes</p></div>
-          <span className="chart-period">Monthly</span>
-        </div>
-        <ChartBox height={320}>
-          {(w, h) => (
-            <BarChart width={w} height={h} data={data.monthly_comparison} barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-              <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={fmtY} />
-              <Tooltip {...TT} />
-              <Legend wrapperStyle={{ color: '#94a3b8' }} />
-              <Bar dataKey={`sales_${data.prev_year || 2024}`} fill="#3b82f6" name={`${data.prev_year || 2024} Sales`} radius={[4, 4, 0, 0]} />
-              <Bar dataKey={`sales_${data.max_year || 2025}`} fill="#10b981" name={`${data.max_year || 2025} Sales`} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          )}
-        </ChartBox>
-      </div>
+const YEAR_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#6366f1", "#ec4899", "#8b5cf6"];
 
-      <div className="chart-card-new">
-        <div className="chart-header-new">
-          <div><h3>Model Back-test Validation</h3><p>XGBoost prediction accuracy on {data.max_year} data</p></div>
-          <span className="chart-period">92.4% Accuracy</span>
-        </div>
-        <ChartBox height={320}>
-          {(w, h) => (
-            <LineChart width={w} height={h} data={data.monthly_comparison}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-              <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={fmtY} />
-              <Tooltip {...TT} />
-              <Legend wrapperStyle={{ color: '#94a3b8' }} />
-              <Line type="monotone" dataKey={`sales_${data.max_year || 2025}`} stroke="#10b981" strokeWidth={3} name={`Actual ${data.max_year || 2025}`} dot={{ r: 4 }} />
-              <Line type="monotone" dataKey={`predicted_${data.max_year || 2025}`} stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" name="Predicted" />
-            </LineChart>
-          )}
-        </ChartBox>
+const HistoricalTab = ({ data }) => {
+  const years = data.available_years || [data.prev_year, data.max_year];
+  const title = years.length > 2 
+    ? `${years[0]} - ${years[years.length-1]} Sales Comparison` 
+    : `${data.prev_year} vs ${data.max_year} Sales Comparison`;
+
+  return (
+  <div>
+    <div className="chart-card-new">
+      <div className="chart-header-new">
+        <div><h3>{title}</h3><p>Side-by-side monthly unit volumes</p></div>
+        <span className="chart-period">Monthly</span>
       </div>
+      <ChartBox height={320}>
+        {(w, h) => (
+          <BarChart width={w} height={h} data={data.monthly_comparison} barGap={2}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+            <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+            <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={fmtY} />
+            <Tooltip {...TT} />
+            <Legend wrapperStyle={{ color: '#94a3b8' }} />
+            {years.map((yr, idx) => (
+              <Bar 
+                key={yr} 
+                dataKey={`sales_${yr}`} 
+                fill={YEAR_COLORS[idx % YEAR_COLORS.length]} 
+                name={`${yr} Sales`} 
+                radius={[4, 4, 0, 0]} 
+              />
+            ))}
+          </BarChart>
+        )}
+      </ChartBox>
     </div>
 
     <div className="chart-card-new">
@@ -208,7 +218,8 @@ const HistoricalTab = ({ data }) => (
       </div>
     </div>
   </div>
-);
+  );
+};
 
 /* ── FORECAST TAB ── */
 const ForecastTab = ({ data }) => {

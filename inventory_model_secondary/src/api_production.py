@@ -8,12 +8,15 @@ Replaces the old Hybrid Prophet+XGBoost backend with a pure XGBoost recursive mo
 All endpoints match the frontend's expected API contracts so no frontend changes are needed.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import os
 import math
+import io
+import csv
 from datetime import datetime
 
 from .forecaster import DemandForecaster
@@ -60,12 +63,15 @@ def _require_ready():
 def read_root():
     _require_ready()
     stats = data_manager.get_stats()
+    years = sorted(forecaster.df["Year"].dropna().unique())
+    data_period = f"{int(years[0])}-{int(years[-1])}" if years else "2024-2025"
+
     return {
         "status": "ready",
         "message": "Retail AI Prediction API is running",
         "version": "3.0.0",
         "model": "XGBoost Recursive",
-        "data_period": "2024-2025",
+        "data_period": data_period,
         "business_intelligence": "enabled",
         "enhanced_predictions": "active",
         "inventory": {
@@ -165,6 +171,9 @@ def all_items():
 @app.get("/model-info")
 def model_info():
     _require_ready()
+    years = sorted(forecaster.df["Year"].dropna().unique())
+    data_period = f"{int(years[0])} - {int(years[-1])}" if years else "2024 - 2025"
+    
     return {
         "model": "XGBoost Recursive Forecaster",
         "version": "3.0.0",
@@ -176,7 +185,7 @@ def model_info():
             'Group_II', 'Group_III', 'Group_IV', 'Group_V', 'Group_VI',
             'Category_Liquor'
         ],
-        "trained_on": "master_training_data.csv (Jan 2024 - Dec 2025)",
+        "trained_on": f"master_training_data.csv ({data_period})",
         "items": forecaster.df['Item_Name'].nunique() if forecaster else 0,
         "status": "loaded",
     }
@@ -284,6 +293,84 @@ def predict_paginated(
             "has_prev": page > 1,
         },
     }
+
+
+@app.get("/export-csv")
+def export_csv(
+    prediction_date: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """
+    Generates a full CSV export of all predictions for the given date.
+    Flattens the data structure for easy use in Excel/Sheets.
+    """
+    _require_ready()
+    date_str = prediction_date or datetime.now().strftime("%Y-%m-%d")
+    try:
+        target_date = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {date_str}")
+
+    all_predictions = forecaster.predict_single_month(target_date.month, target_date.year)
+    
+    if not all_predictions:
+        raise HTTPException(status_code=404, detail="No predictions found")
+
+    # Apply filters
+    if category and category.lower() != 'all':
+        all_predictions = [p for p in all_predictions if p.get('category') == category]
+    
+    if search:
+        search_lower = search.lower()
+        all_predictions = [p for p in all_predictions if search_lower in p.get('item_name', '').lower()]
+    
+    if not all_predictions:
+        # Return an empty CSV with headers if no items match filters
+        pass # The loop below will handle it by just writing headers
+
+    # Create CSV in memory
+    output = io.StringIO()
+    
+    # Define flat headers
+    fieldnames = [
+        'item_id', 'item_name', 'category', 'group', 
+        'predicted_demand', 'current_stock', 'recommended_order', 
+        'price', 'purchase_price', 'potential_revenue', 'potential_profit',
+        'trend', 'growth_rate', 'confidence'
+    ]
+    
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    
+    for p in all_predictions:
+        # Flatten/Calculate derived fields
+        row = {
+            'item_id': p.get('item_id'),
+            'item_name': p.get('item_name'),
+            'category': p.get('category'),
+            'group': p.get('group'),
+            'predicted_demand': p.get('final_prediction', 0),
+            'current_stock': p.get('current_stock', 0),
+            'recommended_order': p.get('recommended_order', 0),
+            'price': p.get('price', 0),
+            'purchase_price': p.get('purchase_price', 0),
+            'potential_revenue': round(p.get('final_prediction', 0) * p.get('price', 0), 2),
+            'potential_profit': round(p.get('final_prediction', 0) * (p.get('price', 0) - p.get('purchase_price', 0)), 2),
+            'trend': p.get('trend', 'stable'),
+            'growth_rate': p.get('growth_rate', 0),
+            'confidence': p.get('confidence', 0.8)
+        }
+        writer.writerow(row)
+    
+    output.seek(0)
+    
+    filename = f"retail_analysis_{date_str}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 @app.post("/predict-previous-years")
@@ -405,46 +492,122 @@ def get_item_history(item_name: str):
 # ============================================================
 @app.post("/upload-data")
 async def upload_data(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     year: Optional[str] = Form(None),
     month: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
+    force: Optional[str] = Form(None)
 ):
-    """
-    Upload new sales data (CSV/Excel).
-    Currently saves to the converted_dataset directory.
-    A full pipeline (clean -> append -> regenerate CSV -> retrain) would be needed
-    for production use.
-    """
     import shutil
+    import sqlite3
+    import pandas as pd
     from pathlib import Path
+    from datetime import datetime
 
     base_dir = Path(__file__).resolve().parent.parent.parent
+    db_path = base_dir / "converted_dataset" / "inventory_sales.db"
+    
+    # 1. Duplicate check using SQLite
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM upload_log WHERE filename = ? OR (year = ? AND month = ? AND category = ?)",
+                   (file.filename, year, month, category))
+    existing = cursor.fetchone()
+    
+    if existing and force != "true":
+        conn.close()
+        return {
+            "status": "conflict",
+            "message": "This file has been stored in the database already, are you sure about this?"
+        }
+
+    # 2. Save raw file
     if year and category:
         upload_dir = base_dir / "data" / str(year) / f"{category} {year}"
     else:
-        # Fallback if form data is not provided properly
         upload_dir = base_dir / "converted_dataset"
 
     upload_dir.mkdir(parents=True, exist_ok=True)
-
     file_path = upload_dir / file.filename
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
+    # 3. Insert raw data to SQLite
+    try:
+        if file.filename.lower().endswith('.csv'):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path, engine='openpyxl')
+            
+        df['_source_file'] = file.filename
+        df['_year'] = year
+        df['_month'] = month
+        df['_category'] = category
+        df['_ingested_at'] = datetime.now()
+        
+        # We drop the existing month data to avoid duplication if it's a force overwrite
+        if existing and force == "true" and year and month and category:
+            cursor.execute("DELETE FROM inventory_sales WHERE _year=? AND _month=? AND _category=?", (year, month, category))
+        
+        # Dynamically add any missing columns to prevent schema mismatch errors
+        cursor.execute("PRAGMA table_info(inventory_sales)")
+        existing_cols = [row[1] for row in cursor.fetchall()]
+        for col in df.columns:
+            if col not in existing_cols:
+                try:
+                    cursor.execute(f'ALTER TABLE inventory_sales ADD COLUMN "{col}" TEXT')
+                except Exception as e:
+                    print(f"Failed to add column {col}: {e}")
+        
+        # Deduplicate identical rows before insertion
+        initial_len = len(df)
+        # Drop columns that are definitely unique or metadata
+        dedup_cols = [c for c in df.columns if c not in ['S.No', '_ingested_at', '_source_file']]
+        df = df.drop_duplicates(subset=dedup_cols)
+        if len(df) < initial_len:
+            print(f"[UPLOAD] Removed {initial_len - len(df)} duplicate rows from upload.")
+            
+        df.to_sql('inventory_sales', conn, if_exists='append', index=False)
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO upload_log (filename, year, month, category)
+            VALUES (?, ?, ?, ?)
+        """, (file.filename, year, month, category))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return {"status": "error", "message": f"Database insertion failed: {str(e)}"}
+        
+    conn.close()
+
     return {
         "status": "success",
-        "message": f"File '{file.filename}' uploaded successfully",
+        "message": f"File '{file.filename}' saved to raw archive successfully.",
         "file_path": str(file_path),
         "year": year,
         "month": month,
-        "category": category,
-        "note": "To reflect new data in predictions, run the data preparation pipeline and retrain the model.",
+        "category": category
     }
 
 
+
+# Global training status
+global_training_status = {
+    "status": "idle",
+    "progress": 0,
+    "message": "Ready"
+}
+
+@app.get("/training-status")
+def get_training_status():
+    return global_training_status
+
 @app.post("/retrain")
 def retrain():
+    global global_training_status
+    global_training_status.update({"status": "training", "progress": 5, "message": "Starting retraining pipeline..."})
     """
     Executes the full retraining pipeline: data cleaning -> feature engineering -> model training -> reload.
     """
@@ -472,7 +635,10 @@ def retrain():
     
     output_log = []
     
-    for step_name, script_args in scripts:
+    total_scripts = len(scripts)
+    for i, (step_name, script_args) in enumerate(scripts):
+        progress_pct = 10 + int(70 * (i / max(1, total_scripts)))
+        global_training_status.update({"progress": progress_pct, "message": f"Running {step_name}..."})
         script_name = script_args[0]
         script_path = scripts_dir / script_name
         if not script_path.exists():
@@ -492,15 +658,19 @@ def retrain():
         except subprocess.CalledProcessError as e:
             error_msg = f"--- {step_name} FAILED ---\nExit Code: {e.returncode}\nStdout: {e.stdout}\nStderr: {e.stderr}"
             print(error_msg)
+            global_training_status.update({"status": "error", "message": f"{step_name} failed."})
             return {"status": "error", "error": f"Failed during {step_name}", "details": error_msg}
     
+    global_training_status.update({"progress": 90, "message": "Reloading model..."})
     # Reload the model in the forecaster
     try:
         forecaster._load()
         output_log.append("--- Model Reloaded Successfully ---")
     except Exception as e:
+        global_training_status.update({"status": "error", "message": "Failed to reload model."})
         return {"status": "error", "error": f"Model trained but failed to reload: {str(e)}"}
 
+    global_training_status.update({"status": "completed", "progress": 100, "message": "Training complete!"})
     return {
         "status": "success",
         "message": "Model retrained and loaded successfully.",
@@ -544,18 +714,73 @@ def accuracy_stats():
 
 @app.get("/data-preview")
 def data_preview(limit: int = Query(100, ge=1, le=1000)):
-    """Legacy data preview endpoint."""
-    _require_ready()
-    recent = forecaster.df.sort_values('Date', ascending=False).head(limit)
+    """Database preview endpoint — shows stats from the SQLite raw archive and training data."""
+    import sqlite3
+    from pathlib import Path
+    
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    db_path = base_dir / "converted_dataset" / "inventory_sales.db"
+    
     records = []
-    for _, row in recent.iterrows():
-        records.append({
-            'date': row['Date'].strftime('%Y-%m-%d'),
-            'item_name': row['Item_Name'],
-            'quantity': float(row['Net_Qty']) if pd.notna(row['Net_Qty']) else 0,
-            'category': row['Category'],
-        })
-    return {"records": records, "total": len(records)}
+    db_total = 0
+    db_columns = []
+    upload_log = []
+    
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        
+        # Get total rows in inventory_sales
+        cursor.execute("SELECT COUNT(*) FROM inventory_sales")
+        db_total = cursor.fetchone()[0]
+        
+        # Get column names
+        cursor.execute("PRAGMA table_info(inventory_sales)")
+        db_columns = [row[1] for row in cursor.fetchall()]
+        
+        # Get recent upload log
+        cursor.execute("SELECT filename, year, month, category, upload_date FROM upload_log ORDER BY upload_date DESC LIMIT ?", (limit,))
+        for row in cursor.fetchall():
+            upload_log.append({
+                "filename": row[0],
+                "year": row[1],
+                "month": row[2],
+                "category": row[3],
+                "upload_date": row[4]
+            })
+        conn.close()
+    except Exception as e:
+        print(f"Error reading database: {e}")
+    
+    # Also get training data stats if model is loaded
+    training_total = 0
+    training_columns = []
+    try:
+        import math
+        if forecaster and forecaster.df is not None:
+            training_total = len(forecaster.df)
+            training_columns = list(forecaster.df.columns)
+            recent = forecaster.df.sort_values('Date', ascending=False).head(limit)
+            for _, row in recent.iterrows():
+                qty_val = row['Net_Qty']
+                qty_safe = float(qty_val) if pd.notna(qty_val) and math.isfinite(float(qty_val)) else 0
+                records.append({
+                    'date': row['Date'].strftime('%Y-%m-%d'),
+                    'item_name': str(row['Item_Name']),
+                    'quantity': qty_safe,
+                    'category': str(row['Category']),
+                })
+    except Exception as e:
+        print(f"Error loading training data preview: {e}")
+    
+    return {
+        "records": records,
+        "total": training_total,
+        "columns": training_columns,
+        "db_total": db_total,
+        "db_columns": db_columns,
+        "upload_log": upload_log
+    }
 
 
 # Need pandas import for the data-preview endpoint

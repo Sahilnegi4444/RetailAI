@@ -229,4 +229,22 @@ export const predictionService = {
     link.click();
     document.body.removeChild(link);
   },
+
+  /**
+   * Bulk export all analysis data for all products from the backend
+   */
+  exportFullAnalysisCSV(predictionDate, filters = {}) {
+    let url = `${API_BASE_URL}/export-csv?prediction_date=${predictionDate}`;
+    
+    if (filters.category && filters.category !== 'all') {
+      url += `&category=${encodeURIComponent(filters.category)}`;
+    }
+    
+    if (filters.search) {
+      url += `&search=${encodeURIComponent(filters.search)}`;
+    }
+
+    console.log("📥 [PREDICTION SERVICE] Triggering bulk export:", url);
+    window.open(url, '_blank');
+  }
 };

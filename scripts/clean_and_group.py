@@ -445,7 +445,14 @@ def process_file(filepath, group_rename, is_liquor=False):
     if '_original_group' in df_final.columns:
         df_final = df_final.drop(columns=['_original_group'])
     
-    # Step 14: Summary
+    # Step 15: Final Deduplication
+    initial_len = len(df_final)
+    # Ignore S.No as it's serial
+    dedup_cols = [c for c in df_final.columns if c != 'S.No']
+    df_final = df_final.drop_duplicates(subset=dedup_cols)
+    if len(df_final) < initial_len:
+        print(f"  [DONE] Removed {initial_len - len(df_final)} duplicate rows")
+    
     data_only = df_final[df_final['S.No'] != 'Group Total']
     gt_only = df_final[df_final['S.No'] == 'Group Total']
     
