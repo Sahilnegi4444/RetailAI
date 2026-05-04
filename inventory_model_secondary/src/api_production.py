@@ -346,21 +346,33 @@ def predict_last_n_months(
 # ============================================================
 # Analytics Endpoints
 # ============================================================
-@app.get("/analytics/item/{item_name}")
+
+# Primary endpoints using query params (handles slashes, quotes, special chars in names)
+@app.get("/analytics/item-lookup")
+def get_item_analytics_query(q: str = Query(...)):
+    _require_ready()
+    result = data_manager.get_item_analytics(q)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Item not found: {q}")
+    return result
+
+
+@app.get("/analytics/item-month")
+def get_month_context_query(q: str = Query(...), month: int = Query(...)):
+    _require_ready()
+    result = data_manager.get_month_context(q, month)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No data for {q} in month {month}")
+    return result
+
+
+# Legacy path-based endpoints (kept for backward compatibility, won't work for items with slashes)
+@app.get("/analytics/item/{item_name:path}")
 def get_item_analytics(item_name: str):
     _require_ready()
     result = data_manager.get_item_analytics(item_name)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Item not found: {item_name}")
-    return result
-
-
-@app.get("/analytics/item/{item_name}/month/{month}")
-def get_month_context(item_name: str, month: int):
-    _require_ready()
-    result = data_manager.get_month_context(item_name, month)
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"No data for {item_name} in month {month}")
     return result
 
 
@@ -372,13 +384,19 @@ def get_database_items():
     return {"items": items, "total": len(items)}
 
 
-@app.get("/analytics/database/item/{item_name}")
+# Primary query-param endpoint for item history
+@app.get("/analytics/database/item-lookup")
+def get_item_history_query(q: str = Query(...)):
+    _require_ready()
+    records = data_manager.get_item_history_from_db(q)
+    return {"item_name": q, "records": records, "history": records, "total": len(records)}
+
+
+# Legacy path-based endpoint for item history
+@app.get("/analytics/database/item/{item_name:path}")
 def get_item_history(item_name: str):
     _require_ready()
     records = data_manager.get_item_history_from_db(item_name)
-    # Backwards-compatible aliases:
-    # - Some frontend code uses `history`
-    # - Some uses `records`
     return {"item_name": item_name, "records": records, "history": records, "total": len(records)}
 
 
@@ -556,6 +574,9 @@ def dashboard_historical():
     """
     _require_ready()
     df = forecaster.df.copy()
+    years = sorted(df["Year"].dropna().unique())
+    max_year = int(years[-1]) if len(years) > 0 else 2026
+    prev_year = max_year - 1
 
     month_names = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
                    7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
@@ -568,7 +589,7 @@ def dashboard_historical():
     monthly_comparison = []
     for m in range(1, 13):
         row = {"month": month_names[m], "month_num": m}
-        for year in [2024, 2025]:
+        for year in [prev_year, max_year]:
             val = monthly_by_year[(monthly_by_year["Year"]==year) & (monthly_by_year["Month"]==m)]["Net_Qty"]
             row[f"sales_{year}"] = round(float(val.values[0]), 1) if len(val) > 0 else 0
             row[f"predicted_{year}"] = round(row[f"sales_{year}"] * 0.95, 1)
@@ -585,50 +606,72 @@ def dashboard_historical():
     year_totals = df.groupby("Year")["Net_Qty"].sum()
     year_totals_dict = {int(y): round(float(v), 1) for y, v in year_totals.items()}
 
-    growth_2024_2025 = 0.0
-    if 2024 in year_totals_dict and 2025 in year_totals_dict and year_totals_dict[2024] > 0:
-        growth_2024_2025 = round((year_totals_dict[2025] - year_totals_dict[2024]) / year_totals_dict[2024] * 100, 2)
+    growth_rate = 0.0
+    if prev_year in year_totals_dict and max_year in year_totals_dict and year_totals_dict[prev_year] > 0:
+        growth_rate = round((year_totals_dict[max_year] - year_totals_dict[prev_year]) / year_totals_dict[prev_year] * 100, 2)
 
     return {
         "monthly_comparison": monthly_comparison,
         "category_performance": category_performance,
         "year_totals": year_totals_dict,
-        "growth_rate": growth_2024_2025,
+        "growth_rate": growth_rate,
         "accuracy": 92.4,
+        "max_year": max_year,
+        "prev_year": prev_year
     }
 
 
 @app.get("/analytics/dashboard/forecast")
 def dashboard_forecast():
-    """Demand forecast for the next 6 months based on seasonal trend extension."""
+    """Demand forecast using actual XGBoost predictions for the next 4 months."""
     _require_ready()
     df = forecaster.df.copy()
+    years = sorted(df["Year"].dropna().unique())
+    max_year = int(years[-1]) if len(years) > 0 else 2026
+    prev_year = max_year - 1
 
     month_names = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
                    7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
 
-    actuals_2024 = df[df["Year"] == 2024].groupby("Month")["Net_Qty"].sum()
-    actuals_2025 = df[df["Year"] == 2025].groupby("Month")["Net_Qty"].sum()
+    actuals_curr = df[df["Year"] == max_year].groupby("Month")["Net_Qty"].sum()
 
     historical = []
-    for m in range(1, 13):
-        actual = float(actuals_2025.get(m, 0))
-        historical.append({
-            "label": f"{month_names[m]} 2025",
-            "actual": round(actual, 1),
-            "type": "actual"
-        })
+    max_year_data = df[df["Year"] == max_year]
+    last_month = int(max_year_data["Month"].max()) if not max_year_data.empty else 12
 
+    for m in range(1, 13):
+        actual = float(actuals_curr.get(m, 0))
+        if m <= last_month or actual > 0:
+            historical.append({
+                "label": f"{month_names[m]} {max_year}",
+                "actual": round(actual, 1),
+                "type": "actual"
+            })
+
+    # Use XGBoost to predict next 4 months
+    forecast_months = 4
     forecast = []
-    for m in range(1, 7):
-        base_2025 = float(actuals_2025.get(m, float(actuals_2025.mean())))
-        base_2024 = float(actuals_2024.get(m, float(actuals_2024.mean())))
-        projected = base_2025 * 0.7 + base_2024 * 0.3
+    for i in range(1, forecast_months + 1):
+        m = last_month + i
+        y = max_year
+        if m > 12:
+            m -= 12
+            y += 1
+        
+        try:
+            # Use actual XGBoost recursive forecaster
+            preds = forecaster.predict_single_month(m, y)
+            total_forecast = sum(p.get('prediction', 0) for p in preds)
+        except Exception as e:
+            print(f"[DASHBOARD] Forecast error for {m}/{y}: {e}")
+            # Fallback to seasonal estimate
+            total_forecast = float(actuals_curr.mean()) if len(actuals_curr) > 0 else 0
+
         forecast.append({
-            "label": f"{month_names[m]} 2026",
-            "forecast": round(projected, 1),
-            "low_bound": round(projected * 0.85, 1),
-            "high_bound": round(projected * 1.15, 1),
+            "label": f"{month_names[m]} {y}",
+            "forecast": round(total_forecast, 1),
+            "low_bound": round(total_forecast * 0.85, 1),
+            "high_bound": round(total_forecast * 1.15, 1),
             "type": "forecast"
         })
 
@@ -643,14 +686,16 @@ def dashboard_forecast():
         })
 
     return {
-        "historical_2025": historical,
-        "forecast_2026": forecast,
+        "historical_curr": historical,
+        "forecast_next": forecast,
         "category_forecast": cat_forecast,
         "summary": {
             "total_forecast_units": round(sum(f["forecast"] for f in forecast), 1),
-            "avg_monthly_2025": round(float(actuals_2025.mean()), 1),
-            "months_forecasted": 6,
-        }
+            "avg_monthly_curr": round(float(actuals_curr.mean()) if len(actuals_curr)>0 else 0, 1),
+            "months_forecasted": forecast_months,
+        },
+        "max_year": max_year,
+        "prev_year": prev_year
     }
 
 
@@ -823,13 +868,13 @@ async def allocate_budget(req: BudgetRequest):
             avg_price = 1
         estimated_cost = avg_monthly_demand * avg_price
         total_demand_cost += estimated_cost
-        top_products = gdf.groupby('Item_Name').agg(total_qty=('Qty','sum'), avg_price=('R_Rate','mean')).sort_values('total_qty', ascending=False).head(5).reset_index()
-        top_list = []
-        for _, row in top_products.iterrows():
+        all_products = gdf.groupby('Item_Name').agg(total_qty=('Qty','sum'), avg_price=('R_Rate','mean')).sort_values('total_qty', ascending=False).reset_index()
+        prod_list = []
+        for _, row in all_products.iterrows():
             tq = float(row['total_qty']) if not np.isnan(row['total_qty']) else 0
             ap = float(row['avg_price']) if not np.isnan(row['avg_price']) else 0
-            top_list.append({'name': row['Item_Name'], 'total_sold': round(tq), 'avg_price': round(ap, 2)})
-        group_stats[grp] = {'group': grp, 'label': group_labels.get(grp, f'Group {grp}'), 'category': category, 'item_count': items_in_grp, 'avg_monthly_demand': round(avg_monthly_demand), 'avg_price': round(avg_price, 2), 'estimated_cost': round(estimated_cost, 2), 'top_products': top_list}
+            prod_list.append({'name': row['Item_Name'], 'total_sold': round(tq), 'avg_price': round(ap, 2)})
+        group_stats[grp] = {'group': grp, 'label': group_labels.get(grp, f'Group {grp}'), 'category': category, 'item_count': items_in_grp, 'avg_monthly_demand': round(avg_monthly_demand), 'avg_price': round(avg_price, 2), 'estimated_cost': round(estimated_cost, 2), 'top_products': prod_list[:5], 'products': prod_list}
     result_groups = []
     for grp in sorted(groups):
         gs = group_stats[grp]

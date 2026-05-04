@@ -461,31 +461,57 @@ const BulkPrediction = () => {
     rows.push(['Prediction Date', state.predictionDate]);
     rows.push([]);
 
-    rows.push(['Item Name', 'Category', 'Aggregate Demand (Units)', 'Unit Price (₹)', 'Total Cost (₹)', 'Recommended Order', 'Confidence']);
+    rows.push([
+      'Item Name', 
+      'Category', 
+      'Aggregate Demand (Units)', 
+      'Purchase Price (₹)', 
+      'Sales Price (₹)', 
+      'Total Order Cost (₹)', 
+      'Total Expected Revenue (₹)', 
+      'Total Expected Profit (₹)', 
+      'Profit Margin (%)', 
+      'Recommended Order', 
+      'Confidence'
+    ]);
     
     let totalDemand = 0;
-    let totalCost = 0;
+    let totalOrderCost = 0;
+    let totalExpectedRevenue = 0;
+    let totalExpectedProfit = 0;
 
     filteredPredictionResults.forEach(pred => {
       const demand = Math.round(pred.final_prediction || pred.prediction || 0);
-      const price = pred.price || 0;
-      const cost = demand * price;
+      const salesPrice = pred.price || 0;
+      const purchasePrice = pred.purchase_price || 0;
+      
+      const orderCost = demand * purchasePrice;
+      const expectedRevenue = demand * salesPrice;
+      const expectedProfit = expectedRevenue - orderCost;
+      const profitMargin = purchasePrice > 0 ? ((salesPrice - purchasePrice) / purchasePrice) * 100 : 0;
+
       totalDemand += demand;
-      totalCost += cost;
+      totalOrderCost += orderCost;
+      totalExpectedRevenue += expectedRevenue;
+      totalExpectedProfit += expectedProfit;
 
       rows.push([
         pred.item_name,
         pred.category || 'N/A',
         demand,
-        price.toFixed(2),
-        cost.toFixed(2),
+        purchasePrice.toFixed(2),
+        salesPrice.toFixed(2),
+        orderCost.toFixed(2),
+        expectedRevenue.toFixed(2),
+        expectedProfit.toFixed(2),
+        `${profitMargin.toFixed(2)}%`,
         pred.recommended_order || demand,
         `${((pred.confidence || 0) * 100).toFixed(1)}%`
       ]);
     });
 
     rows.push([]);
-    rows.push(['TOTAL', '', totalDemand, '', totalCost.toFixed(2), '', '']);
+    rows.push(['TOTAL', '', totalDemand, '', '', totalOrderCost.toFixed(2), totalExpectedRevenue.toFixed(2), totalExpectedProfit.toFixed(2), '', '', '']);
 
     const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -656,8 +682,12 @@ const BulkPrediction = () => {
               <tbody>
                 {paginatedResults.map((pred, idx) => {
                   const demand = Math.round(pred.final_prediction || pred.prediction || 0);
-                  const price = pred.price || 0;
-                  const totalCost = demand * price;
+                  const salesPrice = pred.price || 0;
+                  const purchasePrice = pred.purchase_price || 0;
+                  const orderCost = demand * purchasePrice;
+                  const expectedRevenue = demand * salesPrice;
+                  const expectedProfit = expectedRevenue - orderCost;
+                  const profitMargin = purchasePrice > 0 ? ((salesPrice - purchasePrice) / purchasePrice) * 100 : 0;
                   return (
                   <React.Fragment key={idx}>
                     <tr className={state.expandedResultId === pred.item_name ? 'expanded' : ''}>
@@ -672,8 +702,8 @@ const BulkPrediction = () => {
                       <td className="item-name-cell">{pred.item_name}</td>
                       <td><span className="category-badge">{pred.category || 'N/A'}</span></td>
                       <td className="prediction-cell" style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{demand.toLocaleString('en-IN')} units</td>
-                      <td>₹{price.toFixed(2)}</td>
-                      <td style={{ fontWeight: 'bold', color: '#10b981' }}>₹{Math.round(totalCost).toLocaleString('en-IN')}</td>
+                      <td>₹{salesPrice.toFixed(2)}</td>
+                      <td style={{ fontWeight: 'bold', color: '#10b981' }}>₹{Math.round(orderCost).toLocaleString('en-IN')}</td>
                       <td>{(pred.recommended_order || demand).toLocaleString('en-IN')}</td>
                       <td>
                         <span className={`confidence-badge ${pred.confidence > 0.7 ? 'high' : pred.confidence > 0.5 ? 'medium' : 'low'}`}>
@@ -701,12 +731,28 @@ const BulkPrediction = () => {
                                 <div className="stat-value">{Math.round(demand / (pred.n_months || state.selectedMonths)).toLocaleString('en-IN')} units</div>
                               </div>
                               <div className="stat-card">
-                                <div className="stat-label">Total Budget</div>
-                                <div className="stat-value">₹{Math.round(totalCost).toLocaleString('en-IN')}</div>
+                                <div className="stat-label">Total Order Cost</div>
+                                <div className="stat-value">₹{Math.round(orderCost).toLocaleString('en-IN')}</div>
                               </div>
                               <div className="stat-card">
-                                <div className="stat-label">Unit Price</div>
-                                <div className="stat-value">₹{price.toFixed(2)}</div>
+                                <div className="stat-label">Total Revenue</div>
+                                <div className="stat-value" style={{ color: '#3b82f6' }}>₹{Math.round(expectedRevenue).toLocaleString('en-IN')}</div>
+                              </div>
+                              <div className="stat-card">
+                                <div className="stat-label">Expected Profit</div>
+                                <div className="stat-value" style={{ color: '#10b981' }}>₹{Math.round(expectedProfit).toLocaleString('en-IN')}</div>
+                              </div>
+                              <div className="stat-card">
+                                <div className="stat-label">Profit Margin</div>
+                                <div className="stat-value">{profitMargin.toFixed(1)}%</div>
+                              </div>
+                              <div className="stat-card">
+                                <div className="stat-label">Sales Price</div>
+                                <div className="stat-value">₹{salesPrice.toFixed(2)}</div>
+                              </div>
+                              <div className="stat-card">
+                                <div className="stat-label">Purchase Price</div>
+                                <div className="stat-value">₹{purchasePrice.toFixed(2)}</div>
                               </div>
                               <div className="stat-card">
                                 <div className="stat-label">Confidence</div>
@@ -723,7 +769,8 @@ const BulkPrediction = () => {
                               <div className="confidence-details">
                                 <div className="confidence-explanation">
                                   <p>📦 <strong>Bulk Order:</strong> Stock {demand.toLocaleString('en-IN')} units of {pred.item_name} to cover demand for the next {pred.n_months || state.selectedMonths} months.</p>
-                                  <p>💰 <strong>Budget Required:</strong> ₹{Math.round(totalCost).toLocaleString('en-IN')} at ₹{price.toFixed(2)}/unit.</p>
+                                  <p>💰 <strong>Budget Required:</strong> ₹{Math.round(orderCost).toLocaleString('en-IN')} at ₹{purchasePrice.toFixed(2)}/unit.</p>
+                                  <p>📈 <strong>Expected Profit:</strong> ₹{Math.round(expectedProfit).toLocaleString('en-IN')} ({profitMargin.toFixed(1)}% margin).</p>
                                   {pred.confidence < 0.7 && (
                                     <p className="confidence-recommendation">
                                       💡 <strong>Note:</strong> Confidence is below 70% — consider ordering 10-15% extra as buffer.

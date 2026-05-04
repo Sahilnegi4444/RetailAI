@@ -98,7 +98,7 @@ const Analytics = () => {
     setLoading(true); setError(null);
     try {
       const [aRes, pRes] = await Promise.all([
-        fetch(`${API()}/analytics/item/${encodeURIComponent(itemName)}`),
+        fetch(`${API()}/analytics/item-lookup?q=${encodeURIComponent(itemName)}`),
         fetch(`${API()}/analytics/dashboard/product-analysis?item_name=${encodeURIComponent(itemName)}`)
       ]);
       if (!aRes.ok) throw new Error("Item not found");

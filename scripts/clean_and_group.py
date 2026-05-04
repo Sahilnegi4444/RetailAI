@@ -233,9 +233,12 @@ def load_file(filepath):
     """Load file handling both .xlsx and TSV-disguised-.xls formats."""
     filename = os.path.basename(filepath)
     
+    aliases = {'GP_Index': 'GP_Index_No', 'Refund_Q': 'Refund_Qty', 'Closing_St': 'Closing_Stock'}
+
     # Try as Excel first
     try:
         df = pd.read_excel(filepath, engine='openpyxl')
+        df = df.rename(columns=aliases)
         if len(df.columns) >= 15:
             return df
     except Exception:
@@ -248,6 +251,7 @@ def load_file(filepath):
         unnamed = [c for c in df.columns if 'Unnamed' in str(c)]
         if unnamed:
             df = df.drop(columns=unnamed)
+        df = df.rename(columns=aliases)
         return df
     except Exception:
         pass
@@ -255,6 +259,7 @@ def load_file(filepath):
     # Fallback: try with xlrd
     try:
         df = pd.read_excel(filepath, engine='xlrd')
+        df = df.rename(columns=aliases)
         return df
     except Exception as e:
         raise ValueError(f"Cannot load {filename}: {e}")

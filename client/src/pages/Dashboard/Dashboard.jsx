@@ -39,9 +39,8 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
 
-  const cache = useRef({ historical: null, forecast: null, yearwise: null });
+  const cache = useRef({ historical: null, yearwise: null });
   const [historicalData, setHistoricalData] = useState(null);
-  const [forecastData, setForecastData] = useState(null);
   const [yearwiseData, setYearwiseData] = useState(null);
   const [tabLoading, setTabLoading] = useState(false);
 
@@ -64,7 +63,6 @@ const Dashboard = () => {
   const loadTabData = async (tab) => {
     if (cache.current[tab]) {
       if (tab === 'historical') setHistoricalData(cache.current[tab]);
-      if (tab === 'forecast') setForecastData(cache.current[tab]);
       if (tab === 'yearwise') setYearwiseData(cache.current[tab]);
       return;
     }
@@ -74,9 +72,6 @@ const Dashboard = () => {
       if (tab === 'historical') {
         data = await analyticsService.getDashboardHistorical();
         cache.current.historical = data; setHistoricalData(data);
-      } else if (tab === 'forecast') {
-        data = await analyticsService.getDashboardForecast();
-        cache.current.forecast = data; setForecastData(data);
       } else if (tab === 'yearwise') {
         data = await analyticsService.getDashboardYearwise();
         cache.current.yearwise = data; setYearwiseData(data);
@@ -118,9 +113,9 @@ const Dashboard = () => {
       </div>
 
       <div className="dashboard-tabs">
-        {['historical', 'forecast', 'yearwise'].map(tab => (
+        {['historical', 'yearwise'].map(tab => (
           <button key={tab} className={`dash-tab ${activeTab === tab ? 'active' : ''}`} onClick={() => handleTabChange(tab)}>
-            {tab === 'historical' ? '📊 Historical Performance' : tab === 'forecast' ? '📈 Demand Forecast' : '📅 Year-wise Analysis'}
+            {tab === 'historical' ? '📊 Historical Performance' : '📅 Year-wise Analysis'}
             {cache.current[tab] && <span className="cache-dot">●</span>}
           </button>
         ))}
@@ -128,7 +123,6 @@ const Dashboard = () => {
 
       {tabLoading && <div className="tab-loading">Loading data...</div>}
       {!tabLoading && activeTab === 'historical' && historicalData && <HistoricalTab data={historicalData} />}
-      {!tabLoading && activeTab === 'forecast' && forecastData && <ForecastTab data={forecastData} />}
       {!tabLoading && activeTab === 'yearwise' && yearwiseData && <YearwiseTab data={yearwiseData} />}
     </div>
   );
@@ -190,21 +184,23 @@ const HistoricalTab = ({ data }) => (
 
     <div className="chart-card-new">
       <div className="chart-header-new">
-        <div><h3>Category Growth: 2024 → 2025</h3><p>Unit volume shift by product category</p></div>
+        <div><h3>Category Growth: {data.prev_year || 2024} → {data.max_year || 2025}</h3><p>Unit volume shift by product category</p></div>
         <span className="chart-period">YoY: {data.growth_rate}%</span>
       </div>
       <div className="year-summary-cards">
         {Object.entries(data.category_performance).map(([cat, years]) => {
-          const g = years[2024] > 0 ? ((years[2025] - years[2024]) / years[2024] * 100).toFixed(1) : 'N/A';
+          const prevY = data.prev_year || 2024;
+          const maxY = data.max_year || 2025;
+          const g = years[prevY] > 0 ? ((years[maxY] - years[prevY]) / years[prevY] * 100).toFixed(1) : 'N/A';
           return (
             <div key={cat} className="year-card">
               <div className="year-card-header">
                 <span className="year-badge">{cat}</span>
-                <span className={`stat-trend ${g >= 0 ? 'trend-up' : 'trend-down'}`}>{g >= 0 ? '↑' : '↓'} {Math.abs(g)}%</span>
+                <span className={`stat-trend ${g !== 'N/A' && g >= 0 ? 'trend-up' : 'trend-down'}`}>{g !== 'N/A' && g >= 0 ? '↑' : '↓'} {g !== 'N/A' ? Math.abs(g) : 0}%</span>
               </div>
               <div className="year-card-stats">
-                <div className="ys-stat"><label>{data.prev_year} Units</label><div className="val">{years[data.prev_year]?.toLocaleString()}</div></div>
-                <div className="ys-stat"><label>{data.max_year} Units</label><div className="val green">{years[data.max_year]?.toLocaleString()}</div></div>
+                <div className="ys-stat"><label>{prevY} Units</label><div className="val">{years[prevY]?.toLocaleString() || 0}</div></div>
+                <div className="ys-stat"><label>{maxY} Units</label><div className="val green">{years[maxY]?.toLocaleString() || 0}</div></div>
               </div>
             </div>
           );

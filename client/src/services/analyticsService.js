@@ -43,7 +43,7 @@ export const analyticsService = {
    */
   async getItemAnalytics(itemName) {
     try {
-      const response = await fetch(`${API_BASE_URL}/analytics/item/${encodeURIComponent(itemName)}`);
+      const response = await fetch(`${API_BASE_URL}/analytics/item-lookup?q=${encodeURIComponent(itemName)}`);
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       return await response.json();
     } catch (error) {
@@ -57,7 +57,7 @@ export const analyticsService = {
    */
   async getMonthContext(itemName, month) {
     try {
-      const response = await fetch(`${API_BASE_URL}/analytics/item/${encodeURIComponent(itemName)}/month/${month}`);
+      const response = await fetch(`${API_BASE_URL}/analytics/item-month?q=${encodeURIComponent(itemName)}&month=${month}`);
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       return await response.json();
     } catch (error) {
@@ -85,7 +85,7 @@ export const analyticsService = {
    */
   async getItemHistory(itemName) {
     try {
-      const response = await fetch(`${API_BASE_URL}/analytics/database/item/${encodeURIComponent(itemName)}`);
+      const response = await fetch(`${API_BASE_URL}/analytics/database/item-lookup?q=${encodeURIComponent(itemName)}`);
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       return await response.json();
     } catch (error) {

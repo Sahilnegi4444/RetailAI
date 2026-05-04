@@ -111,13 +111,25 @@ const BudgetAllocator = () => {
 
   const exportCSV = () => {
     if (!result) return;
-    let csv = "Group,Label,Category,Items,Avg Price,Monthly Demand,Allocated Budget,Units Affordable,Coverage %,Weight %\n";
+    let csv = "Group,Label,Category,Items,Avg Price (₹),Monthly Demand,Allocated Budget (₹),Units Affordable,Coverage %,Weight %\n";
     result.groups.forEach(g => {
       csv += `${g.group},"${g.label}",${g.category},${g.item_count},${g.avg_price},${g.avg_monthly_demand},${g.allocated_budget},${g.units_affordable},${g.coverage_pct},${g.weight}\n`;
     });
-    csv += `\nTotal Budget,${result.budget}\nMonth,${result.month_name} ${result.year}\n`;
+    
+    csv += `\n\n--- Product Details ---\n`;
+    csv += `Group,Product Name,Total Sold (Historical),Avg Price (₹)\n`;
+    result.groups.forEach(g => {
+      const productsList = g.products || g.top_products || [];
+      productsList.forEach(p => {
+        csv += `${g.group},"${p.name}",${p.total_sold},${p.avg_price}\n`;
+      });
+    });
+
+    csv += `\n\n--- Summary ---\n`;
+    csv += `Total Budget,${result.budget}\nMonth,${result.month_name} ${result.year}\n`;
     csv += `Total Demand Cost,${result.total_demand_cost}\nBudget Coverage,${result.budget_vs_demand}%\n`;
-    const blob = new Blob([csv], { type: "text/csv" });
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -208,7 +220,7 @@ const BudgetAllocator = () => {
           </div>
 
           {/* Actions */}
-          <div className="export-row" style={{ display: 'flex', gap: '1rem', opacity: 0, height: 0, overflow: 'hidden' }}>
+          <div className="export-row" style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
             <button className="export-btn" onClick={exportCSV}>📥 Export Allocation Plan (CSV)</button>
             <button className="export-btn" style={{ background: '#334155' }} onClick={resetToAI}>🔄 Reset to AI Optimal</button>
           </div>
@@ -279,16 +291,16 @@ const BudgetAllocator = () => {
                         />
                       </div>
                     </div>
-                    <div style={{ width: '100px' }}>
+                    <div style={{ width: '120px' }}>
                       <label style={{ fontSize: '0.8rem', color: '#3b82f6', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Weight (%)</label>
                       <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid #3b82f6', padding: '6px 10px', borderRadius: '8px' }}>
                         <input 
                           type="number" 
                           value={g.weight}
                           onChange={(e) => handleGroupBudgetChange(idx, e.target.value, 'percentage')}
-                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.5rem', fontWeight: '900', width: '100%', outline: 'none', textAlign: 'right' }}
+                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.1rem', fontWeight: '900', width: '100%', outline: 'none', textAlign: 'right' }}
                         />
-                        <span style={{ color: '#3b82f6', marginLeft: '6px', fontSize: '1.25rem', fontWeight: 'bold' }}>%</span>
+                        <span style={{ color: '#3b82f6', marginLeft: '6px', fontSize: '1.1rem', fontWeight: 'bold' }}>%</span>
                       </div>
                     </div>
                   </div>
