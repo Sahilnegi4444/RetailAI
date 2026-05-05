@@ -322,27 +322,14 @@ const BulkPrediction = () => {
   const handleExport = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      // Determine what to export:
-      // 1. If budget is set, export the budget-filtered items (frontend handles this logic)
-      if (state.budget && state.budget > 0) {
-        const dataToExport = budgetFilteredProducts.items;
-        
-        if (!dataToExport || dataToExport.length === 0) {
-          alert('No data available to export with current budget. Wait for predictions to load first.');
-          dispatch({ type: 'SET_LOADING', payload: false });
-          return;
-        }
-
-        // Export using the service's CSV generator for the budget-filtered set
-        predictionService.exportToCSV(
-          dataToExport,
-          `predictions_${state.predictionDate}_budget.csv`
-        );
-      } else {
-        // 2. BULK EXPORT from backend for all products (even those not yet loaded via scroll)
-        // This includes search and category filters
-        predictionService.exportFullAnalysisCSV(state.predictionDate, state.filters);
-      }
+      // 1. BULK EXPORT from backend for all products (now includes budget support)
+      // This ensures all model features are included as requested by the user
+      predictionService.exportFullAnalysisCSV(
+        state.predictionDate, 
+        state.filters,
+        state.budget,
+        state.filters.budgetStrategy
+      );
       
       dispatch({ type: 'SET_LOADING', payload: false });
     } catch (error) {
@@ -350,7 +337,7 @@ const BulkPrediction = () => {
       dispatch({ type: 'SET_LOADING', payload: false });
       alert('Export failed: ' + error.message);
     }
-  }, [state.predictionDate, state.budget, state.filters, budgetFilteredProducts]);
+  }, [state.predictionDate, state.budget, state.filters]);
 
   const handleRefresh = useCallback(() => {
     fetchPredictions(1);
@@ -467,72 +454,62 @@ const BulkPrediction = () => {
       return;
     }
 
-    const timestamp = new Date().toISOString().split('T')[0];
     const rows = [];
-
-    rows.push(['Bulk Order Forecast Report', `Next ${state.selectedMonths} Months Aggregate`]);
-    rows.push(['Generated', new Date().toLocaleString()]);
-    rows.push(['Prediction Date', state.predictionDate]);
-    rows.push([]);
-
-    rows.push([
-      'Item Name', 
-      'Category', 
-      'Aggregate Demand (Units)', 
-      'Purchase Price (₹)', 
-      'Sales Price (₹)', 
-      'Total Order Cost (₹)', 
-      'Total Expected Revenue (₹)', 
-      'Total Expected Profit (₹)', 
-      'Profit Margin (%)', 
-      'Recommended Order', 
-      'Confidence'
-    ]);
+    rows.push(['--- Product Details ---']);
     
-    let totalDemand = 0;
-    let totalOrderCost = 0;
-    let totalExpectedRevenue = 0;
-    let totalExpectedProfit = 0;
-
+    // Define headers
+    const headers = [
+      'Group',
+      'Product Name', 
+      'Total Sold', 
+      'Avg Price (₹)',
+      'item_id',
+      'category',
+      'current_stock', 
+      'purchase_price', 
+      'potential_revenue', 
+      'potential_profit', 
+      'trend',
+      'growth_rate'
+    ];
+    rows.push(headers);
+    
     filteredPredictionResults.forEach(pred => {
       const demand = Math.round(pred.final_prediction || pred.prediction || 0);
       const salesPrice = pred.price || 0;
       const purchasePrice = pred.purchase_price || 0;
-      
-      const orderCost = demand * purchasePrice;
       const expectedRevenue = demand * salesPrice;
-      const expectedProfit = expectedRevenue - orderCost;
-      const profitMargin = purchasePrice > 0 ? ((salesPrice - purchasePrice) / purchasePrice) * 100 : 0;
-
-      totalDemand += demand;
-      totalOrderCost += orderCost;
-      totalExpectedRevenue += expectedRevenue;
-      totalExpectedProfit += expectedProfit;
+      const expectedProfit = expectedRevenue - (demand * purchasePrice);
 
       rows.push([
+        pred.group || 'II',
         pred.item_name,
-        pred.category || 'N/A',
         demand,
-        purchasePrice.toFixed(2),
         salesPrice.toFixed(2),
-        orderCost.toFixed(2),
+        pred.item_id || 'N/A',
+        pred.category || 'N/A',
+        pred.current_stock || 0,
+        purchasePrice.toFixed(2),
         expectedRevenue.toFixed(2),
         expectedProfit.toFixed(2),
-        `${profitMargin.toFixed(2)}%`,
-        pred.recommended_order || demand,
-        `${((pred.confidence || 0) * 100).toFixed(1)}%`
+        pred.trend || 'stable',
+        `${((pred.growth_rate || 0) * 100).toFixed(1)}%`
       ]);
     });
 
-    rows.push([]);
-    rows.push(['TOTAL', '', totalDemand, '', '', totalOrderCost.toFixed(2), totalExpectedRevenue.toFixed(2), totalExpectedProfit.toFixed(2), '', '', '']);
+    const csv = rows.map(row => 
+      row.map(cell => {
+        const str = String(cell).replace(/"/g, '""');
+        return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str}"` : str;
+      }).join(',')
+    ).join('\n');
 
-    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    // Add UTF-8 BOM for Excel Rupee symbol support
+    const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `bulk_order_forecast_${state.selectedMonths}m_${timestamp}.csv`);
+    link.setAttribute('download', `bulk_order_forecast_${state.selectedMonths}m_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();

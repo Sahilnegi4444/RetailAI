@@ -116,38 +116,9 @@ export const predictionService = {
    * Export predictions to CSV with historical data and cost calculations
    */
   exportToCSV(predictions, filename = 'predictions.csv') {
-    const headers = [
-      'Item Name',
-      'Category',
-      'Purchase Price (₹)',
-      'Sales Price (₹)',
-      'Current Stock',
-      'Predicted Demand (Units)',
-      'Total Expected Revenue (₹)',
-      'Total Expected Profit (₹)',
-      'Profit Margin (%)',
-      'Trend',
-      'Growth Rate',
-      'Recommended Order',
-      'Confidence',
-      'Prev Year Total Sales',
-      'Current Year Total Sales',
-      'Month 1 Name',
-      'Month 1 Sales',
-      'Month 2 Name',
-      'Month 2 Sales',
-      'Month 3 Name',
-      'Month 3 Sales',
-    ];
+    if (!predictions || predictions.length === 0) return;
 
-    let totalNetRevenue = 0;
-    let totalExpectedProfit = 0;
-    let totalPredictedDemand = 0;
-
-    const rows = predictions.map(p => {
-      // Get last 3 months data
-      const last3Months = p.last_3_months || [];
-      
+    const dataRows = predictions.map(p => {
       const salesPrice = p.price || 0;
       const purchasePrice = p.purchase_price || 0;
       const predictedDemand = Math.round(p.final_prediction || 0);
@@ -155,69 +126,42 @@ export const predictionService = {
       const expectedRevenue = salesPrice * predictedDemand;
       const expectedCost = purchasePrice * predictedDemand;
       const expectedProfit = expectedRevenue - expectedCost;
-      const profitMargin = purchasePrice > 0 ? ((salesPrice - purchasePrice) / purchasePrice) * 100 : 0;
       
-      totalNetRevenue += expectedRevenue;
-      totalExpectedProfit += expectedProfit;
-      totalPredictedDemand += predictedDemand;
-      
-      return [
-        p.item_name,
-        p.category,
-        purchasePrice.toFixed(2),
-        salesPrice.toFixed(2),
-        p.current_stock || 0,
-        predictedDemand,
-        expectedRevenue.toFixed(2),
-        expectedProfit.toFixed(2),
-        `${profitMargin.toFixed(2)}%`,
-        p.trend || 'stable',
-        `${((p.growth_rate || 0) * 100).toFixed(1)}%`,
-        Math.round(p.recommended_order || 0),
-        `${((p.confidence || 0) * 100).toFixed(1)}%`,
-        p.year_prev_total || 0,
-        p.year_curr_total || 0,
-        last3Months[0]?.month_name || 'N/A',
-        last3Months[0]?.sales || 0,
-        last3Months[1]?.month_name || 'N/A',
-        last3Months[1]?.sales || 0,
-        last3Months[2]?.month_name || 'N/A',
-        last3Months[2]?.sales || 0,
-      ];
+      return {
+        'Group': p.group || 'II',
+        'Product Name': p.item_name,
+        'Total Sold': predictedDemand,
+        'Avg Price (₹)': salesPrice.toFixed(2),
+        'item_id': p.item_id || 'N/A',
+        'category': p.category,
+        'current_stock': p.current_stock || 0,
+        'purchase_price': purchasePrice.toFixed(2),
+        'potential_revenue': expectedRevenue.toFixed(2),
+        'potential_profit': expectedProfit.toFixed(2),
+        'trend': p.trend || 'stable',
+        'growth_rate': `${((p.growth_rate || 0) * 100).toFixed(1)}%`
+      };
     });
 
-    // Add summary row
-    const summaryRow = [
-      'TOTAL',
-      '',
-      '',
-      '',
-      '',
-      totalPredictedDemand,
-      totalNetRevenue.toFixed(2),
-      totalExpectedProfit.toFixed(2),
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-    ];
+    const csvRows = [];
+    csvRows.push(['--- Product Details ---']);
+    const headers = Object.keys(dataRows[0]);
+    csvRows.push(headers);
+    
+    dataRows.forEach(row => {
+      csvRows.push(headers.map(h => row[h]));
+    });
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
-      summaryRow.map(cell => `"${cell}"`).join(','),
-    ].join('\n');
+    // Generate CSV string with proper escaping
+    const csvContent = csvRows.map(row => 
+      row.map(cell => {
+        const str = String(cell).replace(/"/g, '""');
+        return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str}"` : str;
+      }).join(',')
+    ).join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    // Add UTF-8 BOM for Excel Rupee symbol support
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     
@@ -228,12 +172,13 @@ export const predictionService = {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   },
 
   /**
    * Bulk export all analysis data for all products from the backend
    */
-  exportFullAnalysisCSV(predictionDate, filters = {}) {
+  exportFullAnalysisCSV(predictionDate, filters = {}, budget = null, strategy = 'greedy') {
     let url = `${API_BASE_URL}/export-csv?prediction_date=${predictionDate}`;
     
     if (filters.category && filters.category !== 'all') {
@@ -242,6 +187,10 @@ export const predictionService = {
     
     if (filters.search) {
       url += `&search=${encodeURIComponent(filters.search)}`;
+    }
+
+    if (budget && budget > 0) {
+      url += `&budget=${budget}&strategy=${encodeURIComponent(strategy)}`;
     }
 
     console.log("📥 [PREDICTION SERVICE] Triggering bulk export:", url);

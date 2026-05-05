@@ -295,15 +295,49 @@ def predict_paginated(
     }
 
 
+def _allocate_budget(predictions: List[dict], budget: float, strategy: str = "greedy") -> List[dict]:
+    """
+    Helper to allocate budget across predictions.
+    Budget is in Lakhs (1,00,000s) if indicated, but here we expect absolute value or handle conversion.
+    The frontend sends budget in absolute value or we convert.
+    """
+    if budget <= 0:
+        return predictions
+
+    # 1. Sort based on strategy
+    if strategy == "greedy":
+        # Prioritize items with highest predicted demand
+        sorted_preds = sorted(predictions, key=lambda x: x.get('final_prediction', 0), reverse=True)
+    elif strategy == "category_wise":
+        # Group by category and sort by demand
+        sorted_preds = sorted(predictions, key=lambda x: (x.get('category', ''), x.get('final_prediction', 0)), reverse=True)
+    else:
+        sorted_preds = predictions
+    
+    # 2. Allocate
+    allocated = []
+    current_cost = 0
+    for p in sorted_preds:
+        demand = p.get('final_prediction', 0)
+        cost = demand * p.get('purchase_price', 0)
+        if current_cost + cost <= budget:
+            allocated.append(p)
+            current_cost += cost
+            
+    return allocated
+
+
 @app.get("/export-csv")
 def export_csv(
     prediction_date: Optional[str] = None,
     category: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    budget: Optional[float] = None,
+    strategy: str = "greedy"
 ):
     """
     Generates a full CSV export of all predictions for the given date.
-    Flattens the data structure for easy use in Excel/Sheets.
+    Supports budget allocation and filtering.
     """
     _require_ready()
     date_str = prediction_date or datetime.now().strftime("%Y-%m-%d")
@@ -317,7 +351,7 @@ def export_csv(
     if not all_predictions:
         raise HTTPException(status_code=404, detail="No predictions found")
 
-    # Apply filters
+    # 1. Apply standard filters
     if category and category.lower() != 'all':
         all_predictions = [p for p in all_predictions if p.get('category') == category]
     
@@ -325,52 +359,91 @@ def export_csv(
         search_lower = search.lower()
         all_predictions = [p for p in all_predictions if search_lower in p.get('item_name', '').lower()]
     
-    if not all_predictions:
-        # Return an empty CSV with headers if no items match filters
-        pass # The loop below will handle it by just writing headers
+    # 2. Apply Budget Allocation if provided
+    if budget is not None and budget > 0:
+        all_predictions = _allocate_budget(all_predictions, budget, strategy)
 
-    # Create CSV in memory
+    # 3. Create CSV in memory with BOM
     output = io.StringIO()
+    output.write('\ufeff') # Add BOM for Excel
     
-    # Define flat headers
+    # Define headers to match image
     fieldnames = [
-        'item_id', 'item_name', 'category', 'group', 
-        'predicted_demand', 'current_stock', 'recommended_order', 
-        'price', 'purchase_price', 'potential_revenue', 'potential_profit',
-        'trend', 'growth_rate', 'confidence'
+        'Group', 'Product Name', 'Total Sold', 'Avg Price (₹)',
+        'item_id', 'category', 'current_stock', 'purchase_price', 
+        'potential_revenue', 'potential_profit', 'trend', 'growth_rate'
     ]
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
+    output.write('--- Product Details ---\n')
     writer.writeheader()
     
     for p in all_predictions:
-        # Flatten/Calculate derived fields
         row = {
+            'Group': p.get('group', 'II'),
+            'Product Name': p.get('item_name'),
+            'Total Sold': p.get('final_prediction', 0),
+            'Avg Price (₹)': p.get('price', 0),
             'item_id': p.get('item_id'),
-            'item_name': p.get('item_name'),
             'category': p.get('category'),
-            'group': p.get('group'),
-            'predicted_demand': p.get('final_prediction', 0),
             'current_stock': p.get('current_stock', 0),
-            'recommended_order': p.get('recommended_order', 0),
-            'price': p.get('price', 0),
             'purchase_price': p.get('purchase_price', 0),
             'potential_revenue': round(p.get('final_prediction', 0) * p.get('price', 0), 2),
             'potential_profit': round(p.get('final_prediction', 0) * (p.get('price', 0) - p.get('purchase_price', 0)), 2),
             'trend': p.get('trend', 'stable'),
-            'growth_rate': p.get('growth_rate', 0),
-            'confidence': p.get('confidence', 0.8)
+            'growth_rate': f"{p.get('growth_rate', 0)*100:.1f}%"
         }
         writer.writerow(row)
     
     output.seek(0)
     
     filename = f"retail_analysis_{date_str}.csv"
+    if budget:
+        filename = f"budget_allocation_{date_str}.csv"
+
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+class BudgetPredictRequest(BaseModel):
+    budget: float
+    prediction_date: str
+    strategy: str = "greedy"
+    category: Optional[str] = None
+    search: Optional[str] = None
+
+@app.post("/budget-predict")
+def budget_predict(request: BudgetPredictRequest):
+    """
+    Returns budget-allocated predictions with all features.
+    """
+    _require_ready()
+    try:
+        target_date = datetime.strptime(request.prediction_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+
+    all_predictions = forecaster.predict_single_month(target_date.month, target_date.year)
+    
+    # Filter
+    if request.category and request.category.lower() != 'all':
+        all_predictions = [p for p in all_predictions if p.get('category') == request.category]
+    if request.search:
+        s = request.search.lower()
+        all_predictions = [p for p in all_predictions if s in p.get('item_name', '').lower()]
+        
+    # Allocate
+    allocated = _allocate_budget(all_predictions, request.budget, request.strategy)
+    
+    return {
+        "budget": request.budget,
+        "strategy": request.strategy,
+        "total_allocated": len(allocated),
+        "predictions": allocated
+    }
 
 
 @app.post("/predict-previous-years")
