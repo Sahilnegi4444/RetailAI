@@ -117,11 +117,11 @@ const BudgetAllocator = () => {
     });
     
     csv += `\n\n--- Product Details ---\n`;
-    csv += `Group,Product Name,Total Sold (Historical),Avg Price (₹)\n`;
+    csv += `Group,Item ID,Product Name,Category,Total Sold (Predicted),Avg Price,Current Stock,Purchase Price,Potential Revenue,Potential Profit,Trend,Growth Rate\n`;
     result.groups.forEach(g => {
       const productsList = g.products || g.top_products || [];
       productsList.forEach(p => {
-        csv += `${g.group},"${p.name}",${p.total_sold},${p.avg_price}\n`;
+        csv += `${g.group},${p.item_id || 'N/A'},"${p.name || ''}",${p.category || 'N/A'},${p.total_sold || 0},${p.avg_price || 0},${p.current_stock || 0},${p.purchase_price || 0},${p.potential_revenue || 0},${p.potential_profit || 0},${p.trend || 'stable'},${p.growth_rate || '0.0%'}\n`;
       });
     });
 

@@ -1137,7 +1137,7 @@ class BudgetRequest(BaseModel):
     year: int = 2026
 
 @app.post('/budget/allocate')
-async def allocate_budget(req: BudgetRequest):
+def allocate_budget(req: BudgetRequest):
     import numpy as np
     _require_ready()
     df = forecaster.df.copy()
@@ -1148,8 +1148,26 @@ async def allocate_budget(req: BudgetRequest):
     month_names = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'}
     group_labels = {'I':'Group I - FMCG Essentials','II':'Group II - Premium Grocery','III':'Group III - Specialty Items','IV':'Group IV - High-Value Goods','V':'Group V - Daily Staples','VI':'Group VI - Liquor and Beverages'}
     groups = df['Group'].unique().tolist()
+    
+    def safe_float(val):
+        if val is None: return 0.0
+        try:
+            f = float(val)
+            return 0.0 if np.isnan(f) or np.isinf(f) else f
+        except (ValueError, TypeError):
+            return 0.0
+
     total_demand_cost = 0
     group_stats = {}
+    
+    all_predictions = forecaster.predict_single_month(target_month, req.year)
+    preds_by_group = {}
+    for p in all_predictions:
+        g = p.get('group', 'II')
+        if g not in preds_by_group:
+            preds_by_group[g] = []
+        preds_by_group[g].append(p)
+
     for grp in sorted(groups):
         gdf = df[df['Group'] == grp]
         items_in_grp = gdf['Item_Name'].nunique()
@@ -1159,6 +1177,10 @@ async def allocate_budget(req: BudgetRequest):
             avg_monthly_demand = float(month_data.groupby('Item_Name')['Qty'].mean().sum())
         else:
             avg_monthly_demand = float(gdf.groupby(['Year','Month'])['Qty'].sum().mean())
+            
+        if np.isnan(avg_monthly_demand):
+            avg_monthly_demand = 0.0
+            
         avg_price = float(gdf['R_Rate'].mean()) if len(gdf) > 0 else 0
         if avg_price == 0 or np.isnan(avg_price):
             avg_price = float(gdf['W_Rate'].mean()) if len(gdf) > 0 else 1
@@ -1166,12 +1188,51 @@ async def allocate_budget(req: BudgetRequest):
             avg_price = 1
         estimated_cost = avg_monthly_demand * avg_price
         total_demand_cost += estimated_cost
-        all_products = gdf.groupby('Item_Name').agg(total_qty=('Qty','sum'), avg_price=('R_Rate','mean')).sort_values('total_qty', ascending=False).reset_index()
+        
         prod_list = []
-        for _, row in all_products.iterrows():
-            tq = float(row['total_qty']) if not np.isnan(row['total_qty']) else 0
-            ap = float(row['avg_price']) if not np.isnan(row['avg_price']) else 0
-            prod_list.append({'name': row['Item_Name'], 'total_sold': round(tq), 'avg_price': round(ap, 2)})
+        grp_preds = preds_by_group.get(grp, [])
+        for p in grp_preds:
+            ts_raw = p.get('final_prediction', 0)
+            total_sold = int(round(safe_float(ts_raw)))
+            
+            price = safe_float(p.get('price', 0))
+            purchase_price = safe_float(p.get('purchase_price', 0))
+            current_stock = safe_float(p.get('current_stock', 0))
+            growth_rate = safe_float(p.get('growth_rate', 0))
+            
+            def safe_str(v, default='Unknown'):
+                if v is None: return default
+                if isinstance(v, float) and (np.isnan(v) or np.isinf(v)): return default
+                return str(v)
+
+            prod_list.append({
+                'name': safe_str(p.get('item_name'), 'Unknown'),
+                'total_sold': total_sold,
+                'avg_price': price,
+                'item_id': safe_str(p.get('item_id'), 'N/A'),
+                'category': safe_str(p.get('category'), category),
+                'current_stock': current_stock,
+                'purchase_price': purchase_price,
+                'potential_revenue': round(total_sold * price, 2),
+                'potential_profit': round(total_sold * (price - purchase_price), 2),
+                'trend': safe_str(p.get('trend'), 'stable'),
+                'growth_rate': f"{growth_rate*100:.1f}%"
+            })
+            
+        prod_list.sort(key=lambda x: x['total_sold'], reverse=True)
+        
+        if not prod_list:
+            all_products = gdf.groupby('Item_Name').agg(total_qty=('Qty','sum'), avg_price=('R_Rate','mean')).sort_values('total_qty', ascending=False).reset_index()
+            for _, row in all_products.iterrows():
+                tq = safe_float(row['total_qty'])
+                ap = safe_float(row['avg_price'])
+                prod_list.append({
+                    'name': safe_str(row['Item_Name'], 'Unknown'),
+                    'total_sold': round(tq), 'avg_price': round(ap, 2),
+                    'item_id': 'N/A', 'category': category, 'current_stock': 0, 'purchase_price': 0,
+                    'potential_revenue': round(tq * ap, 2), 'potential_profit': 0, 'trend': 'stable', 'growth_rate': '0.0%'
+                })
+        
         group_stats[grp] = {'group': grp, 'label': group_labels.get(grp, f'Group {grp}'), 'category': category, 'item_count': items_in_grp, 'avg_monthly_demand': round(avg_monthly_demand), 'avg_price': round(avg_price, 2), 'estimated_cost': round(estimated_cost, 2), 'top_products': prod_list[:5], 'products': prod_list}
     result_groups = []
     for grp in sorted(groups):
