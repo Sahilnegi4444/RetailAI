@@ -46,15 +46,15 @@ class DataManager:
         year_counts = self.df.groupby('Year')['Item_Name'].nunique().to_dict()
 
         # Critical Items (Stock < Average Demand)
-        # We take the last known state for each item
-        last_state = self.df.sort_values('Date').groupby('Item_ID').tail(1)
-        # We also need the mean demand for each item
-        mean_demand = self.df.groupby('Item_ID')['Net_Qty'].mean()
+        # We take the last known state for each unique Item_Name to match total items definition
+        last_state = self.df.sort_values('Date').groupby('Item_Name').tail(1)
+        # We also need the mean demand for each unique Item_Name
+        mean_demand = self.df.groupby('Item_Name')['Net_Qty'].mean()
         
         critical_count = 0
-        for item_id, row in last_state.iterrows():
+        for index, row in last_state.iterrows():
             stock = float(row['Closing_Stock']) if pd.notna(row.get('Closing_Stock')) else 0
-            demand = float(mean_demand.get(row['Item_ID'], 0))
+            demand = float(mean_demand.get(row['Item_Name'], 0))
             if stock < demand:
                 critical_count += 1
 
