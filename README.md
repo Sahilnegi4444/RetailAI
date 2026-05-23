@@ -1,377 +1,211 @@
-# Run Code
+# CSD Retail AI Prediction System
 
-- python -m uvicorn inventory_model_secondary.src.api_production:app --reload --port 8002
-- npm run dev
-
-
-# 🎯 Retail AI Prediction - Demand Forecasting System
-
-Production-ready ML system for inventory demand forecasting using Hybrid Prophet + XGBoost with advanced analytics.
-
-## ✨ Features
-
-### Core Predictions
-- **Bulk Predictions**: Forecast demand for 1000+ products
-- **Pagination & Infinite Scroll**: Fast loading with 50 items at a time
-- **Previous Years Analysis**: Compare same month across all years
-- **Last N Months Analysis**: Trend analysis for recent months
-- **Confidence Scoring**: Know which predictions are reliable
-
-### Analytics & Visualization
-- **Expandable Details**: Click to see full analysis with charts
-- **Statistics Cards**: Low/High/Average sales, units, trends
-- **Bar Charts**: Visual representation of sales patterns
-- **Confidence Analysis**: Understand why predictions are accurate/inaccurate
-- **Export to CSV**: Download predictions with detailed breakdowns
-
-### Dashboard
-- Real-time analytics
-- Category-wise distribution
-- Year-wise trends
-- Top items by sales/revenue
-- Historical analysis
+**XGBoost-powered demand forecasting for CSD (Canteen Stores Department) inventory management.**
 
 ---
 
-## 🚀 Quick Start
-
-### Using Docker (Recommended)
+## Quick Start
 
 ```bash
-# Clone repository
-git clone <your-repo-url>
-cd <repo-name>
+# Backend (Terminal 1)
+python -m uvicorn inventory_model_secondary.src.api_production:app --host 0.0.0.0 --port 8002
 
-# Build and start
-docker-compose up -d --build
-
-# Check status
-docker-compose ps
-
-# View logs
-docker-compose logs -f
-```
-
-Access at: **http://localhost**
-
-### Manual Setup
-
-#### Backend
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start backend
-python -m uvicorn inventory_model_secondary.src.api_production:app --reload --port 8001
-```
-
-#### Frontend
-```bash
+# Frontend (Terminal 2)
 cd client
-npm install
 npm run dev
 ```
 
-Access at: **http://localhost:5173**
+- **Frontend**: http://localhost:5173
+- **API Docs**: http://localhost:8002/docs
+- **API Health**: http://localhost:8002/health
 
 ---
 
-## 📦 Tech Stack
+## System Overview
 
-- **Frontend**: React 18 + Vite + Recharts
-- **Backend**: FastAPI + Python 3.11
-- **ML Models**: Prophet + XGBoost (Hybrid)
-- **Database**: SQLite
-- **Proxy**: Nginx
-- **Deployment**: Docker + Docker Compose
+This system forecasts monthly demand for **3,200+ grocery and liquor products** stocked at CSD stores.  
+It is trained on **2 years of real POS sales data (2024–2025)** covering approximately **22,773 records**.
+
+### Key Numbers
+| Metric | Value |
+|--------|-------|
+| Products tracked | 3,200+ |
+| Categories | Grocery, Liquor |
+| Data period | April 2024 – December 2025 |
+| 2024 Revenue | ₹3.68 Crore |
+| 2025 Revenue | ₹4.16 Crore |
+| YoY Growth | ~13% |
+| Model | XGBoost Recursive Forecaster |
+| Model features | 18 (lag, rolling avg, margins, seasonality) |
 
 ---
 
-## 🔌 API Endpoints
+## Features
 
-### Health & Stats
-- `GET /health` - Health check
-- `GET /stats` - Database statistics
-- `GET /all_items` - All items with stats
+### 📊 Dashboard
+- **Historical Performance**: Monthly sales comparison across 2024–2025 with toggle between Units and Revenue (₹)
+- **Year-wise Analysis**: Per-year breakdown with monthly drill-down
+- **Real revenue totals** computed from actual POS data (Net_Qty × R_Rate)
+
+### 📈 Bulk Predictions
+- Demand forecast for all ~3,200 products for any future month
+- Recursive XGBoost model using lag features and seasonality
+- Current stock levels displayed alongside predicted demand
+- Recommended order quantity = Predicted Demand − Current Stock
+- Export to CSV for procurement planning
+
+### 📅 3-Month Bulk Forecast
+- Aggregate demand for the next 1–6 months per product
+- Useful for quarterly purchase order planning
+
+### 📉 Product Analytics
+- Deep dive into individual product sales history
+- Year-over-year trends, seasonality factors, peak months
+- Volatility scores and growth rates
+
+### 💰 Budget Planner (Group Allocation)
+- Allocate a procurement budget across product groups (I–VI)
+- Shows estimated demand cost per group based on W_Rate (wholesale price)
+- Group-wise recommended spend and coverage analysis
+
+### 📤 Data Upload & Retraining
+- Upload raw monthly Excel/CSV files from CSD POS
+- Duplicate detection per (year, month, category)
+- Full pipeline retraining on demand: Clean → Feature Engineering → XGBoost → Hot-reload
+- Progress bar shows real-time training status
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 + Vite + Recharts |
+| Backend | FastAPI + Python 3.11 |
+| ML Model | XGBoost (recursive monthly forecaster) |
+| Database | SQLite (`converted_dataset/inventory_sales.db`) |
+
+---
+
+## Project Structure
+
+```
+Retail-AI-Prediction-v2/
+├── client/                              # React Frontend
+│   └── src/
+│       ├── pages/
+│       │   ├── Dashboard/               # Sales dashboard (historical + year-wise)
+│       │   ├── BulkPrediction/          # Main predictions page
+│       │   ├── Analytics.jsx            # Product analytics
+│       │   ├── BudgetAllocator.jsx      # Budget planning
+│       │   └── DataUpload.jsx           # Upload & retrain
+│       ├── components/
+│       │   ├── Sidebar.jsx              # Navigation
+│       │   └── LoadingSpinner.jsx
+│       └── services/
+│           └── analyticsService.js      # API calls
+│
+├── inventory_model_secondary/           # Python Backend
+│   └── src/
+│       ├── api_production.py            # FastAPI app + all endpoints
+│       ├── forecaster.py                # XGBoost recursive forecaster
+│       └── data_manager.py              # Stats + analytics helpers
+│
+├── model/
+│   └── xgboost_demand_model.json        # Trained XGBoost model
+│
+├── converted_dataset/
+│   └── inventory_sales.db               # SQLite: raw + training data
+│
+├── scripts/
+│   └── clean_and_group.py               # Raw file cleaning
+│
+└── requirements.txt
+```
+
+---
+
+## API Endpoints
+
+### Core
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/stats` | Model stats (items, accuracy, avg error) |
+| GET | `/` | Root info |
 
 ### Predictions
-- `POST /predict` - Get predictions for specific date
-- `POST /predict-paginated` - Paginated predictions (50 per page)
-- `POST /predict-previous-years` - Analyze same month across years
-- `POST /predict-last-n-months` - Analyze last N months trend
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/predict` | All-item predictions for a date |
+| POST | `/predict-paginated` | Paginated predictions (used by frontend) |
+| POST | `/predict-future-aggregate` | N-month aggregate forecast |
+| POST | `/predict-previous-years` | Same month, year-over-year |
+| POST | `/predict-last-n-months` | Last N months actual data |
+
+### Analytics
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/analytics/dashboard/historical` | Monthly sales by year (units + revenue ₹) |
+| GET | `/analytics/dashboard/yearwise` | Year summary + monthly series |
+| GET | `/analytics/dashboard/product-analysis` | Deep product analytics |
+| GET | `/analytics/item-lookup?q=` | Item history |
 
 ### Data Management
-- `POST /upload-data` - Upload sales data (CSV/Excel)
-- `POST /retrain` - Retrain ML models with new data
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/upload-data` | Upload monthly Excel/CSV |
+| POST | `/retrain` | Trigger full retraining pipeline |
+| GET | `/training-status` | Poll training progress |
+| POST | `/reload-forecaster` | Hot-reload model without retraining |
+
+### Budget
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/budget/allocate` | Group-wise budget allocation |
+| POST | `/budget-predict` | Budget-filtered predictions |
 
 ---
 
-## 📊 Model Performance
+## Data Format
 
-### Accuracy Metrics
-- **Overall Accuracy**: 89.2%
-- **High Confidence Items**: ~800 (80%)
-- **Medium Confidence**: ~150 (15%)
-- **Low Confidence**: ~50 (5%)
+The system expects CSD POS monthly export files (Excel `.xls`/`.xlsx` or `.csv`).
 
-### Confidence Levels
-| Score | Level | Meaning |
-|-------|-------|---------|
-| 80-100% | 🟢 High | Reliable predictions |
-| 60-79% | 🟡 Medium | Use with caution |
-| 50-59% | 🔴 Low | Investigate further |
+### Required Columns
+| Column | Description |
+|--------|-------------|
+| `GP_Index_No` | Product group index (e.g., `II/001009S`) |
+| `pluno` | PLU number (product ID) |
+| `Item_Name` | Product name |
+| `Qty` | Gross quantity sold |
+| `Refund_Qty` | Returned quantity |
+| `Net_Qty` | Net sold = Qty − Refund_Qty |
+| `W_Rate` | Wholesale/purchase price |
+| `R_Rate` | Retail price |
+| `O_B` | Opening balance (stock at month start) |
+| `Closing_Stock` | Stock at month end |
 
-### Confidence Formula
-```
-Confidence = 1 - (Standard Deviation / Average Sales)
-Confidence = max(0.5, Confidence)  # Minimum 50%
-```
-
----
-
-## 🧪 Testing
-
-### Test Prediction Accuracy
-```bash
-python test_accuracy.py
-```
-
-This will:
-1. Test 100 random products
-2. Compare predictions with actual sales
-3. Calculate error rates
-4. Show confidence analysis
-5. Generate accuracy report
-
-### Manual Testing
-1. Open: http://localhost
-2. Click "📈 Predictions"
-3. Click "📅 Predict Previous Years"
-4. Select date and generate
-5. Click "View" on any product
-6. Verify:
-   - Statistics are correct
-   - Charts display properly
-   - Confidence analysis makes sense
+### Upload Workflow
+1. Select **Year**, **Month**, and **Category** (Grocery or Liquor)
+2. Upload the raw POS file
+3. Repeat for all months you have
+4. Click **"Retrain Model"** to rebuild predictions
 
 ---
 
-## 📁 Project Structure
+## Troubleshooting
 
-```
-.
-├── client/                          # Frontend (React)
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── BulkPrediction/     # Main predictions page
-│   │   │   ├── Dashboard/          # Analytics dashboard
-│   │   │   └── ...
-│   │   ├── components/             # Reusable components
-│   │   ├── services/               # API services
-│   │   └── utils/                  # Helper functions
-│   └── package.json
-│
-├── inventory_model_secondary/       # Backend (Python)
-│   ├── src/
-│   │   ├── api_production.py       # Main API
-│   │   ├── advanced_predictions.py # Advanced prediction methods
-│   │   ├── hybrid_active.py        # Hybrid ML system
-│   │   ├── database_manager.py     # Database operations
-│   │   └── ...
-│   └── models/                     # Trained ML models
-│
-├── converted_dataset/              # Database
-│   └── inventory_sales.db          # SQLite database
-│
-├── docker-compose.yml              # Docker orchestration
-├── Dockerfile.backend              # Backend container
-├── Dockerfile.frontend             # Frontend container
-├── nginx.conf                      # Nginx configuration
-├── requirements.txt                # Python dependencies
-├── README.md                       # This file
-├── DEPLOYMENT_GUIDE.md             # Deployment instructions
-└── MODEL_EVALUATION_REPORT.md      # Model analysis
-
-```
+| Issue | Fix |
+|-------|-----|
+| Predictions show stock = 0 | Click "Refresh Stock Data" in Upload page |
+| Old data appearing | Check if a duplicate server is running on port 8002 |
+| Training hangs | Check `GET /training-status` for error message |
+| Frontend blank | Ensure backend is running on port 8002 |
 
 ---
 
-## 🔧 Configuration
-
-### Environment Variables
-
-Create `.env` file (optional):
-```env
-# Backend
-BACKEND_PORT=8001
-DATABASE_PATH=converted_dataset/inventory_sales.db
-
-# Frontend
-VITE_API_URL=/api
-
-# Nginx
-NGINX_PORT=80
-```
-
-### Ports
-
-| Service | Internal | External |
-|---------|----------|----------|
-| Frontend | 5173 | 80 (via nginx) |
-| Backend | 8001 | 80/api (via nginx) |
-| Nginx | - | 80 |
-
----
-
-## 📈 Usage Guide
-
-### 1. View Dashboard
-- Open application
-- See analytics overview
-- View category distribution
-- Check year-wise trends
-
-### 2. Bulk Predictions
-- Click "📈 Predictions"
-- Page loads with 50 items
-- Scroll down for more (infinite scroll)
-- Click "📥 Export All Data" to download
-
-### 3. Previous Years Analysis
-- Click "📅 Predict Previous Years"
-- Select target date (e.g., 2026-04-01)
-- Click "Generate Prediction"
-- View results with statistics
-- Click "View" for detailed analysis
-- See yearly breakdown and charts
-- Export to CSV
-
-### 4. Last N Months Analysis
-- Click "📊 Predict Last N Months"
-- Select number of months (1-24)
-- Click "Generate Prediction"
-- View results with trend analysis
-- Click "View" for detailed analysis
-- See monthly breakdown and charts
-- Export to CSV
-
-### 5. Upload New Data
-- Click "📤 Upload Data"
-- Select CSV/Excel file
-- Upload and process
-- Retrain models if needed
-
----
-
-## 🐛 Troubleshooting
-
-### Backend Not Starting
-```bash
-# Check logs
-docker-compose logs backend
-
-# Common fixes:
-# - Ensure database exists: converted_dataset/inventory_sales.db
-# - Ensure models exist: inventory_model_secondary/models/
-# - Check port 8001 is available
-```
-
-### Frontend Not Loading
-```bash
-# Check logs
-docker-compose logs frontend
-
-# Common fixes:
-# - Clear browser cache
-# - Check API connection in browser console
-# - Verify nginx is routing correctly
-```
-
-### Predictions Not Working
-```bash
-# Test API directly
-curl http://localhost/api/health
-
-# Check database
-python check_db.py
-
-# Retrain models
-python retrain_with_new_data.py
-```
-
----
-
-## 🔄 Updating
-
-### Pull Latest Changes
-```bash
-git pull origin main
-docker-compose down
-docker-compose up -d --build
-```
-
-### Update Models
-```bash
-python retrain_with_new_data.py
-docker-compose restart backend
-```
-
-### Update Database
-- Upload new data via UI
-- Or replace database file and restart
-
----
-
-## 📚 Documentation
-
-- **DEPLOYMENT_GUIDE.md** - Detailed deployment instructions
-- **MODEL_EVALUATION_REPORT.md** - Model accuracy analysis
-- **API Documentation** - Available at http://localhost/api/docs
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch
-3. Make changes
-4. Test thoroughly
-5. Submit pull request
-
----
-
-## 📄 License
-
-[Your License Here]
-
----
-
-## 🆘 Support
-
-For issues or questions:
-1. Check documentation
-2. Review troubleshooting section
-3. Check logs: `docker-compose logs`
-4. Open an issue on GitHub
-
----
-
-## ✅ Production Checklist
-
-- [ ] Database populated with data
-- [ ] ML models trained
-- [ ] Docker images built
-- [ ] Services running
-- [ ] Health check passes
-- [ ] Frontend loads
-- [ ] Predictions work
-- [ ] Accuracy tested (>85%)
-- [ ] SSL/TLS configured (if public)
-- [ ] Backups configured
-- [ ] Monitoring set up
-
----
-
-**Version**: 2.0.0  
-**Last Updated**: 2026-04-02  
+**Version**: 3.0.0  
+**Last Updated**: May 2026  
+**Model**: XGBoost Recursive (18 features)  
+**Data**: CSD Store POS — Grocery + Liquor (2024–2025)  
 **Status**: Production Ready ✅

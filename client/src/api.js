@@ -600,3 +600,14 @@ export const getDataPreview = async (limit = 10) => {
     throw error;
   }
 };
+
+// Reload forecaster model hot-reload
+export const reloadForecaster = async () => {
+  try {
+    const res = await apiClient.post('/reload-forecaster');
+    return res.data;
+  } catch (error) {
+    console.error('Error reloading forecaster:', error);
+    throw error;
+  }
+};

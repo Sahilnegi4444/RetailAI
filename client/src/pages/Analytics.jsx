@@ -18,8 +18,14 @@ const TT = {
 
 const formatProductName = (name) => {
   if (!name) return "";
-  return name
+  // Split on space-separated decimal numbers, tabs, newlines, carriage returns, or Excel _x000D_ artifacts
+  const cleaned = name
+    .split(/\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?|\t|\n|\r|_x000[dD]_|_x000[dD]/)[0]
+    .replace(/\s+#\d+\s*$/, "")
     .replace(/"/g, "")
+    .trim();
+    
+  return cleaned
     .toLowerCase()
     .replace(/\b\w/g, c => c.toUpperCase());
 };
@@ -347,98 +353,45 @@ const Analytics = () => {
             </div>
           )}
 
-          {/* Chart 2: Year-wise */}
-          <div className="chart-card">
-            <h2>📊 Year-wise Sales Analysis</h2>
-            <p className="chart-description">Total units sold per year — long-term growth trajectory</p>
-            {yearlyTrend.length > 0 ? (
-              <ChartBox height={300}>
-                {(w, h) => (
-                  <BarChart width={w} height={h} data={yearlyTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="year" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <Tooltip {...TT} />
-                    <Legend wrapperStyle={{ color: '#94a3b8' }} />
-                    <Bar dataKey="sales" fill="#3b82f6" radius={[6,6,0,0]} name="Total Units" />
-                  </BarChart>
-                )}
-              </ChartBox>
-            ) : <div className="no-data">No yearly data available</div>}
-          </div>
-
-          {/* Chart 3: Monthly Average */}
-          {monthlyAvgPattern.length > 0 && (
-            <div className="chart-card">
-              <h2>📅 Monthly Sales Pattern</h2>
-              <p className="chart-description">Average units per month across all years — reveals seasonal demand cycles</p>
-              <ChartBox height={300}>
-                {(w, h) => (
-                  <BarChart width={w} height={h} data={monthlyAvgPattern}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <Tooltip {...TT} />
-                    <Bar dataKey="avg_units" fill="#8b5cf6" radius={[6,6,0,0]} name="Avg Units" />
-                  </BarChart>
-                )}
-              </ChartBox>
+          {/* Side-by-Side Analysis Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+            {/* Chart 2: Year-wise */}
+            <div className="chart-card" style={{ marginBottom: 0 }}>
+              <h2>📊 Year-wise Sales Analysis</h2>
+              <p className="chart-description">Total units sold per year — long-term growth trajectory</p>
+              {yearlyTrend.length > 0 ? (
+                <ChartBox height={300}>
+                  {(w, h) => (
+                    <BarChart width={w} height={h} data={yearlyTrend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis dataKey="year" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                      <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                      <Tooltip {...TT} />
+                      <Legend wrapperStyle={{ color: '#94a3b8' }} />
+                      <Bar dataKey="sales" fill="#3b82f6" radius={[6,6,0,0]} name="Total Units" />
+                    </BarChart>
+                  )}
+                </ChartBox>
+              ) : <div className="no-data">No yearly data available</div>}
             </div>
-          )}
 
-          {/* Chart 4: Month Deep-dive */}
-          <div className="chart-card">
-            <h2>📅 Month Deep-dive: {FULL_MONTHS[selectedMonth - 1]}</h2>
-            <div className="month-selector">
-              <label>Select Month:</label>
-              <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="month-select">
-                {FULL_MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-              </select>
-            </div>
-            <p className="chart-description">Sales for {FULL_MONTHS[selectedMonth - 1]} across all years</p>
-            {monthPattern.length > 0 ? (
-              <ChartBox height={280}>
-                {(w, h) => (
-                  <BarChart width={w} height={h} data={monthPattern}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="year" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <Tooltip {...TT} />
-                    <Bar dataKey="sales" fill="#10b981" radius={[6,6,0,0]} name="Units Sold" />
-                  </BarChart>
-                )}
-              </ChartBox>
-            ) : <div className="no-data">No data for {FULL_MONTHS[selectedMonth - 1]}</div>}
-          </div>
-
-          {/* Chart 5: Seasonality */}
-          <div className="chart-card">
-            <h2>🌍 Seasonality Factors</h2>
-            <p className="chart-description">Demand multiplier per month (1.0 = average). Click a bar to drill into that month.</p>
-            {seasonalData.length > 0 ? (
-              <ChartBox height={300}>
-                {(w, h) => (
-                  <BarChart width={w} height={h} data={seasonalData}
-                    onClick={(e) => { const m = e?.activePayload?.[0]?.payload?.monthNum; if (m) setSelectedMonth(m); }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <Tooltip {...TT} />
-                    <Bar dataKey="factor" fill="#f59e0b" radius={[6,6,0,0]} name="Factor" cursor="pointer" />
-                  </BarChart>
-                )}
-              </ChartBox>
-            ) : <div className="no-data">No seasonal data</div>}
-          </div>
-
-          {/* Insights */}
-          <div className="insights-card">
-            <h2>💡 Key Insights for {formatProductName(selectedItem)}</h2>
-            <div className="insights-grid">
-              <div className="insight-item"><span className="insight-icon">📊</span><div><h4>Trend Analysis</h4><p>Sales are <strong>{analytics.trend_direction}</strong> with <strong>{(analytics.growth_rate * 100).toFixed(1)}%</strong> YoY growth.</p></div></div>
-              <div className="insight-item"><span className="insight-icon">📈</span><div><h4>Volatility</h4><p>CV is <strong>{(analytics.statistics.cv * 100).toFixed(1)}%</strong>.{analytics.statistics.cv < 0.3 ? " Stable." : analytics.statistics.cv < 0.6 ? " Moderate." : " Highly volatile."}</p></div></div>
-              <div className="insight-item"><span className="insight-icon">🎯</span><div><h4>Seasonal Pattern</h4><p>Peak: <strong>{Math.max(...Object.values(analytics.seasonal_factors || {})).toFixed(2)}</strong> • Low: <strong>{Math.min(...Object.values(analytics.seasonal_factors || {})).toFixed(2)}</strong></p></div></div>
-              <div className="insight-item"><span className="insight-icon">📉</span><div><h4>Sales Range</h4><p>From <strong>{Math.round(analytics.statistics.min_sales)}</strong> to <strong>{Math.round(analytics.statistics.max_sales)}</strong> units (mean: {Math.round(analytics.statistics.avg_sales)})</p></div></div>
+            {/* Chart 3: Seasonality Factors */}
+            <div className="chart-card" style={{ marginBottom: 0 }}>
+              <h2>🌍 Seasonality Factors</h2>
+              <p className="chart-description">Demand multiplier per month (1.0 = average calendar baseline)</p>
+              {seasonalData.length > 0 ? (
+                <ChartBox height={300}>
+                  {(w, h) => (
+                    <BarChart width={w} height={h} data={seasonalData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                      <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                      <Tooltip {...TT} />
+                      <Bar dataKey="factor" fill="#f59e0b" radius={[6,6,0,0]} name="Factor" cursor="pointer" />
+                    </BarChart>
+                  )}
+                </ChartBox>
+              ) : <div className="no-data">No seasonal data</div>}
             </div>
           </div>
         </>

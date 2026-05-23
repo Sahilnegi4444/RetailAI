@@ -13,7 +13,9 @@ const TT = {
   labelStyle: { color: '#94a3b8' },
 };
 
-const fmtY = (val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val;
+const fmtY = (val) => val >= 1e7 ? `₹${(val/1e7).toFixed(1)}Cr` : val >= 1e5 ? `₹${(val/1e5).toFixed(1)}L` : val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val;
+const fmtUnits = (val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val;
+const fmtRs = (val) => val >= 1e7 ? `₹${(val/1e7).toFixed(2)} Cr` : val >= 1e5 ? `₹${(val/1e5).toFixed(1)}L` : `₹${Number(val).toLocaleString('en-IN')}`;
 
 /* Wrapper that measures its own width and passes it to chart */
 const ChartBox = ({ height = 320, children }) => {
@@ -159,31 +161,75 @@ const YEAR_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#6366f1", "#ec4899", "#8b
 
 const HistoricalTab = ({ data }) => {
   const years = data.available_years || [data.prev_year, data.max_year];
+  const [viewMode, setViewMode] = React.useState('units'); // 'units' or 'revenue'
   const title = years.length > 2 
     ? `${years[0]} - ${years[years.length-1]} Sales Comparison` 
     : `${data.prev_year} vs ${data.max_year} Sales Comparison`;
 
+  // Build chart data based on viewMode
+  const chartData = data.monthly_comparison.map(row => {
+    const r = { month: row.month, month_num: row.month_num };
+    years.forEach(yr => {
+      if (viewMode === 'revenue' && row[`revenue_${yr}`] != null) {
+        r[`data_${yr}`] = row[`revenue_${yr}`];
+      } else {
+        r[`data_${yr}`] = row[`sales_${yr}`] || 0;
+      }
+    });
+    return r;
+  });
+
   return (
   <div>
+    {/* Revenue summary cards */}
+    {data.year_revenue && (
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${years.length}, 1fr)`, gap: '1rem', marginBottom: '1.5rem' }}>
+        {years.map((yr, idx) => (
+          <div key={yr} style={{ background: 'rgba(30,41,59,0.8)', border: `1px solid ${YEAR_COLORS[idx % YEAR_COLORS.length]}44`, borderRadius: '12px', padding: '1.25rem' }}>
+            <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px' }}>{yr} Total Revenue</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700, color: YEAR_COLORS[idx % YEAR_COLORS.length] }}>
+              {fmtRs(data.year_revenue[yr] || 0)}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+              {(data.year_totals[yr] || 0).toLocaleString()} units sold
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
     <div className="chart-card-new">
       <div className="chart-header-new">
-        <div><h3>{title}</h3><p>Side-by-side monthly unit volumes</p></div>
-        <span className="chart-period">Monthly</span>
+        <div><h3>{title}</h3><p>{viewMode === 'revenue' ? 'Monthly revenue in ₹ by year' : 'Side-by-side monthly unit volumes'}</p></div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button 
+            onClick={() => setViewMode('units')}
+            style={{ padding: '4px 12px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', background: viewMode === 'units' ? '#3b82f6' : 'transparent', color: viewMode === 'units' ? '#fff' : '#94a3b8', border: viewMode === 'units' ? 'none' : '1px solid #334155' }}
+          >Units</button>
+          <button 
+            onClick={() => setViewMode('revenue')}
+            style={{ padding: '4px 12px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', background: viewMode === 'revenue' ? '#10b981' : 'transparent', color: viewMode === 'revenue' ? '#fff' : '#94a3b8', border: viewMode === 'revenue' ? 'none' : '1px solid #334155' }}
+          >Revenue ₹</button>
+          <span className="chart-period">Monthly</span>
+        </div>
       </div>
       <ChartBox height={320}>
         {(w, h) => (
-          <BarChart width={w} height={h} data={data.monthly_comparison} barGap={2}>
+          <BarChart width={w} height={h} data={chartData} barGap={2}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-            <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={fmtY} />
-            <Tooltip {...TT} />
+            <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={viewMode === 'revenue' ? fmtY : fmtUnits} width={70} />
+            <Tooltip 
+              {...TT} 
+              formatter={(val, name) => [viewMode === 'revenue' ? fmtRs(val) : `${Number(val).toLocaleString()} units`, name]}
+            />
             <Legend wrapperStyle={{ color: '#94a3b8' }} />
             {years.map((yr, idx) => (
               <Bar 
                 key={yr} 
-                dataKey={`sales_${yr}`} 
+                dataKey={`data_${yr}`} 
                 fill={YEAR_COLORS[idx % YEAR_COLORS.length]} 
-                name={`${yr} Sales`} 
+                name={`${yr} ${viewMode === 'revenue' ? 'Revenue' : 'Sales'}`} 
                 radius={[4, 4, 0, 0]} 
               />
             ))}
@@ -194,23 +240,52 @@ const HistoricalTab = ({ data }) => {
 
     <div className="chart-card-new">
       <div className="chart-header-new">
-        <div><h3>Category Growth: {data.prev_year || 2024} → {data.max_year || 2025}</h3><p>Unit volume shift by product category</p></div>
-        <span className="chart-period">YoY: {data.growth_rate}%</span>
+        <div>
+          <h3>Category Performance Comparison</h3>
+          <p>Unit volume and year-over-year growth by product category</p>
+        </div>
+        <span className="chart-period" style={{ textTransform: 'none' }}>
+          {years.length} Years Tracked
+        </span>
       </div>
-      <div className="year-summary-cards">
-        {Object.entries(data.category_performance).map(([cat, years]) => {
-          const prevY = data.prev_year || 2024;
-          const maxY = data.max_year || 2025;
-          const g = years[prevY] > 0 ? ((years[maxY] - years[prevY]) / years[prevY] * 100).toFixed(1) : 'N/A';
+      <div className="year-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+        {Object.entries(data.category_performance).map(([cat, yearsData]) => {
+          const sortedCategoryYears = Object.keys(yearsData).map(Number).sort((a, b) => a - b);
+          
           return (
-            <div key={cat} className="year-card">
-              <div className="year-card-header">
-                <span className="year-badge">{cat}</span>
-                <span className={`stat-trend ${g !== 'N/A' && g >= 0 ? 'trend-up' : 'trend-down'}`}>{g !== 'N/A' && g >= 0 ? '↑' : '↓'} {g !== 'N/A' ? Math.abs(g) : 0}%</span>
+            <div key={cat} className="year-card" style={{ padding: '1.25rem', height: '100%', minWidth: 'unset', display: 'block' }}>
+              <div className="year-card-header" style={{ marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="year-badge" style={{ fontSize: '0.9rem', padding: '0.2rem 0.6rem', fontWeight: 'bold' }}>{cat}</span>
               </div>
-              <div className="year-card-stats">
-                <div className="ys-stat"><label>{prevY} Units</label><div className="val">{years[prevY]?.toLocaleString() || 0}</div></div>
-                <div className="ys-stat"><label>{maxY} Units</label><div className="val green">{years[maxY]?.toLocaleString() || 0}</div></div>
+              <div className="category-years-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {sortedCategoryYears.map((yr, idx) => {
+                  const valEntry = yearsData[yr];
+                  const isObj = valEntry && typeof valEntry === 'object';
+                  const val = isObj ? (viewMode === 'revenue' ? valEntry.revenue : valEntry.units) : valEntry;
+                  
+                  const prevYr = sortedCategoryYears[idx - 1];
+                  const prevValEntry = prevYr ? yearsData[prevYr] : null;
+                  const isPrevObj = prevValEntry && typeof prevValEntry === 'object';
+                  const prevVal = prevYr ? (isPrevObj ? (viewMode === 'revenue' ? prevValEntry.revenue : prevValEntry.units) : prevValEntry) : null;
+                  
+                  const g = (prevVal && prevVal > 0) ? ((val - prevVal) / prevVal * 100).toFixed(1) : null;
+                  
+                  return (
+                    <div key={yr} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600 }}>{yr}</span>
+                        {g !== null && (
+                          <span className={`stat-trend ${Number(g) >= 0 ? 'trend-up' : 'trend-down'}`} style={{ fontSize: '0.75rem', padding: '1px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center' }}>
+                            {Number(g) >= 0 ? '↑' : '↓'} {Math.abs(Number(g))}%
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontWeight: 600, color: idx === sortedCategoryYears.length - 1 ? '#10b981' : '#e2e8f0' }}>
+                        {viewMode === 'revenue' ? fmtRs(val || 0) : `${(val || 0).toLocaleString()} units`}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -278,12 +353,11 @@ const ForecastTab = ({ data }) => {
       <div className="forecast-summary-row">
         <div className="forecast-stat"><div className="fs-label">{forecastMonths}-Month Projection</div><div className="fs-value blue">{data.summary.total_forecast_units.toLocaleString()} units</div></div>
         <div className="forecast-stat"><div className="fs-label">Avg Monthly ({data.max_year})</div><div className="fs-value">{avgMonthlyCurr?.toLocaleString()} units</div></div>
-        <div className="forecast-stat"><div className="fs-label">Confidence Level</div><div className="fs-value green">80.0%</div></div>
       </div>
 
       <div className="chart-card-new">
         <div className="chart-header-new">
-          <div><h3>Demand Forecast: Historical + AI Prediction</h3><p>Actual sales (green) with recursive XGBoost projections (blue) and confidence bands</p></div>
+          <div><h3>Demand Forecast: Historical + AI Prediction</h3><p>Actual sales (green) with recursive XGBoost projections (blue)</p></div>
         </div>
         <ChartBox height={400}>
           {(w, h) => (
@@ -329,42 +403,114 @@ const ForecastTab = ({ data }) => {
 };
 
 /* ── YEARWISE TAB ── */
-const YearwiseTab = ({ data }) => (
-  <div>
-    <div className="year-summary-cards">
-      {data.year_summary.map(y => (
-        <div key={y.year} className="year-card">
-          <div className="year-card-header"><span className="year-badge">{y.year}</span></div>
-          <div className="year-card-stats">
-            <div className="ys-stat"><label>Total Units</label><div className="val">{y.total_units.toLocaleString()}</div></div>
-            <div className="ys-stat"><label>Revenue</label><div className="val">₹{Math.round(y.total_revenue).toLocaleString()}</div></div>
-            <div className="ys-stat"><label>Avg Monthly</label><div className="val">{Math.round(y.avg_monthly_units).toLocaleString()}</div></div>
-            <div className="ys-stat"><label>Peak Month</label><div className="val green">{y.peak_month}</div></div>
-          </div>
-        </div>
-      ))}
-    </div>
+const YearwiseTab = ({ data }) => {
+  const [selectedYear, setSelectedYear] = React.useState(
+    data.year_summary.length > 0 ? data.year_summary[data.year_summary.length - 1].year : null
+  );
 
-    <div className="chart-card-new">
-      <div className="chart-header-new">
-        <div><h3>Monthly Sales: Year-over-Year</h3><p>Seasonal distribution comparison across years</p></div>
+  // Build monthly data for the selected year from monthly_series
+  const selectedYearMonthly = React.useMemo(() => {
+    if (!selectedYear || !data.monthly_series) return [];
+    return data.monthly_series.map(row => ({
+      month: row.month,
+      units: row[`y${selectedYear}`] || 0,
+    }));
+  }, [selectedYear, data.monthly_series]);
+
+  const maxUnits = selectedYearMonthly.length > 0
+    ? Math.max(...selectedYearMonthly.map(d => d.units))
+    : 1;
+
+  const YEAR_COLORS_MAP = ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#8b5cf6'];
+
+  return (
+    <div>
+      <div className="year-summary-cards">
+        {data.year_summary.map((y, idx) => (
+          <div
+            key={y.year}
+            className={`year-card${selectedYear === y.year ? ' year-card-selected' : ''}`}
+            onClick={() => setSelectedYear(y.year)}
+            style={{ cursor: 'pointer', transition: 'all 0.2s',
+              border: selectedYear === y.year
+                ? `2px solid ${YEAR_COLORS_MAP[idx % YEAR_COLORS_MAP.length]}`
+                : '1px solid #334155',
+              boxShadow: selectedYear === y.year ? `0 0 0 2px ${YEAR_COLORS_MAP[idx % YEAR_COLORS_MAP.length]}33` : 'none'
+            }}
+          >
+            <div className="year-card-header">
+              <span className="year-badge" style={{
+                background: selectedYear === y.year ? `${YEAR_COLORS_MAP[idx % YEAR_COLORS_MAP.length]}33` : undefined,
+                color: selectedYear === y.year ? YEAR_COLORS_MAP[idx % YEAR_COLORS_MAP.length] : undefined,
+                borderColor: selectedYear === y.year ? YEAR_COLORS_MAP[idx % YEAR_COLORS_MAP.length] : undefined,
+              }}>{y.year}</span>
+              {selectedYear === y.year && <span style={{fontSize: '.7rem', color: YEAR_COLORS_MAP[idx % YEAR_COLORS_MAP.length], fontWeight: 700}}>● Viewing</span>}
+            </div>
+            <div className="year-card-stats">
+              <div className="ys-stat"><label>Total Units</label><div className="val">{y.total_units.toLocaleString()}</div></div>
+              <div className="ys-stat"><label>Revenue</label><div className="val">₹{Math.round(y.total_revenue).toLocaleString()}</div></div>
+              <div className="ys-stat"><label>Avg Monthly</label><div className="val">{Math.round(y.avg_monthly_units).toLocaleString()}</div></div>
+              <div className="ys-stat"><label>Peak Month</label><div className="val green">{y.peak_month}</div></div>
+            </div>
+          </div>
+        ))}
       </div>
-      <ChartBox height={380}>
-        {(w, h) => (
-          <BarChart width={w} height={h} data={data.monthly_series} barGap={4}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-            <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={fmtY} />
-            <Tooltip {...TT} />
-            <Legend wrapperStyle={{ color: '#94a3b8' }} />
-            {data.years.map((yr, i) => (
-              <Bar key={yr} dataKey={`y${yr}`} name={`${yr}`} fill={i === 0 ? '#3b82f6' : '#10b981'} radius={[4, 4, 0, 0]} />
-            ))}
-          </BarChart>
-        )}
-      </ChartBox>
+
+      {/* Single-year monthly breakdown */}
+      {selectedYear && (
+        <div className="chart-card-new" style={{ borderColor: YEAR_COLORS_MAP[data.year_summary.findIndex(y => y.year === selectedYear) % YEAR_COLORS_MAP.length] + '66' }}>
+          <div className="chart-header-new">
+            <div>
+              <h3>📅 {selectedYear} — Monthly Sales Breakdown</h3>
+              <p>Click any year card above to switch the view</p>
+            </div>
+            <span className="chart-period" style={{
+              background: YEAR_COLORS_MAP[data.year_summary.findIndex(y => y.year === selectedYear) % YEAR_COLORS_MAP.length] + '22',
+              color: YEAR_COLORS_MAP[data.year_summary.findIndex(y => y.year === selectedYear) % YEAR_COLORS_MAP.length],
+              border: `1px solid ${YEAR_COLORS_MAP[data.year_summary.findIndex(y => y.year === selectedYear) % YEAR_COLORS_MAP.length]}55`
+            }}>{selectedYear}</span>
+          </div>
+          <ChartBox height={320}>
+            {(w, h) => {
+              const selIdx = data.year_summary.findIndex(y => y.year === selectedYear);
+              const barColor = YEAR_COLORS_MAP[selIdx % YEAR_COLORS_MAP.length];
+              return (
+                <BarChart width={w} height={h} data={selectedYearMonthly} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                  <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={fmtY} />
+                  <Tooltip {...TT} formatter={(val) => [`${val.toLocaleString()} units`, selectedYear]} />
+                  <Bar dataKey="units" fill={barColor} radius={[6, 6, 0, 0]} name={`${selectedYear} Sales`} />
+                </BarChart>
+              );
+            }}
+          </ChartBox>
+        </div>
+      )}
+
+      <div className="chart-card-new">
+        <div className="chart-header-new">
+          <div><h3>Monthly Sales: Year-over-Year</h3><p>Seasonal distribution comparison across years</p></div>
+        </div>
+        <ChartBox height={380}>
+          {(w, h) => (
+            <BarChart width={w} height={h} data={data.monthly_series} barGap={4}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="month" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+              <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={fmtY} />
+              <Tooltip {...TT} />
+              <Legend wrapperStyle={{ color: '#94a3b8' }} />
+              {data.years.map((yr, i) => (
+                <Bar key={yr} dataKey={`y${yr}`} name={`${yr}`} fill={YEAR_COLORS_MAP[i % YEAR_COLORS_MAP.length]} radius={[4, 4, 0, 0]}
+                  opacity={selectedYear === null || selectedYear === yr ? 1 : 0.35}
+                />
+              ))}
+            </BarChart>
+          )}
+        </ChartBox>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default Dashboard;

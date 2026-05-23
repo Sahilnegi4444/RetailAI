@@ -3,8 +3,8 @@
 * { box-sizing: border-box; }
 
 .dashboard-container {
-  padding: 2rem;
-  max-width: 1600px;
+  padding: 1.25rem;
+  max-width: 1440px;
   margin: 0 auto;
   min-height: 100vh;
   background: #0f172a;
@@ -20,8 +20,8 @@
   gap: 1.5rem;
   flex-wrap: wrap;
 }
-.header-left h1 { font-size: 1.875rem; color: #fff; margin: 0 0 .4rem 0; font-weight: 800; }
-.header-subtitle { font-size: .9rem; color: #94a3b8; margin: 0 0 .75rem 0; }
+.header-left h1 { font-size: 1.6rem; color: #fff; margin: 0 0 .3rem 0; font-weight: 800; }
+.header-subtitle { font-size: .85rem; color: #94a3b8; margin: 0 0 .6rem 0; }
 .badge-enhanced {
   display: inline-block;
   padding: .3rem .8rem;
@@ -47,15 +47,15 @@
 .stat-card {
   background: linear-gradient(135deg, #1e293b, #162032);
   border: 1px solid #334155;
-  border-radius: 14px;
-  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
   transition: transform .2s, box-shadow .2s;
 }
-.stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.4); }
 .stat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .75rem; }
 .stat-title { font-size: .8rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
 .stat-icon { font-size: 1.2rem; }
-.stat-value { font-size: 1.75rem; font-weight: 800; color: #fff; margin-bottom: .4rem; }
+.stat-value { font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: .3rem; }
 .stat-value.critical { color: #ef4444; }
 .stat-trend { font-size: .75rem; color: #64748b; }
 .stat-trend.trend-up { color: #10b981; }

@@ -6,7 +6,6 @@ const Sidebar = ({ activeView, setActiveView }) => {
     { id: "bulk", icon: "📈", label: "Predictions", category: "Core" },
     { id: "analytics", icon: "📉", label: "Analytics", category: "Core" },
     { id: "budget", icon: "💰", label: "Budget Planner", category: "Core" },
-    { id: "database", icon: "🗄️", label: "Database", category: "Data" },
     { id: "upload", icon: "📤", label: "Upload Data", category: "Data" },
   ];
 

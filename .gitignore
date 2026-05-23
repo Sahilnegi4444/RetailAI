@@ -49,3 +49,16 @@ Thumbs.db
 # Deployment
 .vercel
 .render
+
+# Project Specific
+scratch/
+retail_sales.db
+converted_dataset/*.db
+file_history/
+data/
+model/*.json
+
+# Data files
+*.xlsx
+*.xls
+*.csv
