@@ -1,12 +1,14 @@
+/*.products-table-container*/
 .products-table-container {
   background: #1e293b;
   border: 1px solid #475569;
   border-radius: 12px;
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .products-table {
   width: 100%;
+  min-width: 1000px;
   border-collapse: collapse;
 }
 

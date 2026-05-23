@@ -72,19 +72,6 @@ const FiltersBar = ({
           )}
         </div>
 
-        <div className="filter-group">
-          <label htmlFor="budget-strategy">Budget Strategy</label>
-          <select
-            id="budget-strategy"
-            value={filters.budgetStrategy || 'greedy'}
-            onChange={(e) => onFilterChange('budgetStrategy', e.target.value)}
-            className="filter-select"
-          >
-            <option value="greedy">Greedy (Top demand overall)</option>
-            <option value="by_category">Distribute by Category</option>
-            <option value="by_group">Distribute by Group</option>
-          </select>
-        </div>
 
         <div className="filter-group">
           <label htmlFor="category">Category</label>

@@ -62,7 +62,8 @@ const BudgetAllocator = () => {
   const handleGroupBudgetChange = (idx, value, mode = 'amount') => {
     if (!result) return;
     
-    const totalBudget = parseFloat(result.budget) || 1;
+    // We keep the total budget strictly fixed to the user's initial budget amount
+    const totalBudget = parseFloat(originalResult.budget) || 1;
     let newAmount = 0;
     
     if (mode === 'amount') {
@@ -72,30 +73,92 @@ const BudgetAllocator = () => {
       newAmount = (totalBudget * percentage) / 100;
     }
     
-    const newGroups = [...result.groups];
-    newGroups[idx].allocated_budget = newAmount;
+    // Target amount for the edited group must be capped between 0 and totalBudget
+    const targetAmount = Math.max(0, Math.min(totalBudget, newAmount));
+    const oldAmount = result.groups[idx].allocated_budget;
+    const delta = targetAmount - oldAmount;
     
-    // Recalculate units affordable and coverage
-    newGroups[idx].units_affordable = newAmount > 0 ? Math.floor(newAmount / newGroups[idx].avg_price) : 0;
-    newGroups[idx].coverage_pct = newGroups[idx].avg_monthly_demand > 0 ? 
-      Math.min(100, Math.round((newGroups[idx].units_affordable / newGroups[idx].avg_monthly_demand) * 100)) : 100;
+    if (delta === 0) return;
+    
+    const n = result.groups.length;
+    let newAllocations = result.groups.map(g => g.allocated_budget);
+    newAllocations[idx] = targetAmount;
+    
+    // Proportional water-filling reallocation of -delta among all other groups
+    let remainingDelta = -delta;
+    let activeIndices = Array.from({ length: n }, (_, i) => i).filter(i => i !== idx);
+    
+    while (Math.abs(remainingDelta) > 0.01 && activeIndices.length > 0) {
+      const totalActiveDemand = activeIndices.reduce((sum, i) => sum + (result.groups[i].estimated_cost || 1), 0);
+      
+      if (totalActiveDemand === 0) {
+        const share = remainingDelta / activeIndices.length;
+        let nextActive = [];
+        activeIndices.forEach(i => {
+          const nextVal = newAllocations[i] + share;
+          if (nextVal < 0) {
+            remainingDelta += newAllocations[i];
+            newAllocations[i] = 0;
+          } else {
+            newAllocations[i] = nextVal;
+            nextActive.push(i);
+          }
+        });
+        activeIndices = nextActive;
+        break;
+      }
+      
+      let nextActive = [];
+      let deltaUsed = 0;
+      
+      for (const i of activeIndices) {
+        const proportion = (result.groups[i].estimated_cost || 0) / totalActiveDemand;
+        const share = remainingDelta * proportion;
+        const nextVal = newAllocations[i] + share;
+        
+        if (nextVal < 0) {
+          deltaUsed += -newAllocations[i];
+          newAllocations[i] = 0;
+        } else {
+          newAllocations[i] = nextVal;
+          deltaUsed += share;
+          nextActive.push(i);
+        }
+      }
+      
+      remainingDelta -= deltaUsed;
+      activeIndices = nextActive;
+      
+      if (deltaUsed === 0) break;
+    }
+    
+    // Map back and recalculate statistics for all groups
+    const updatedGroups = result.groups.map((g, i) => {
+      const amt = newAllocations[i];
+      const units = amt > 0 ? Math.floor(amt / g.avg_price) : 0;
+      const coverage = g.avg_monthly_demand > 0 ? 
+        Math.min(999, Math.round((units / g.avg_monthly_demand) * 100)) : 100;
+      const weight = totalBudget > 0 ? Math.round((amt / totalBudget) * 100) : 0;
+      
+      return {
+        ...g,
+        allocated_budget: amt,
+        units_affordable: units,
+        coverage_pct: coverage,
+        weight: weight
+      };
+    });
     
     // Recalculate global totals
-    const totalAllocated = newGroups.reduce((sum, g) => sum + g.allocated_budget, 0);
-    const totalAffordable = newGroups.reduce((sum, g) => sum + g.units_affordable, 0);
+    const totalAllocated = updatedGroups.reduce((sum, g) => sum + g.allocated_budget, 0);
+    const totalAffordable = updatedGroups.reduce((sum, g) => sum + g.units_affordable, 0);
     
-    // Update percentages (weights) for all groups based on the new total or fixed total?
-    // The user wants to adjust distribution. Usually total budget is fixed.
-    newGroups.forEach(g => {
-      g.weight = totalBudget > 0 ? Math.round((g.allocated_budget / totalBudget) * 100) : 0;
-    });
-
     setResult({
       ...result,
       budget: totalAllocated,
       budget_vs_demand: result.total_demand_cost > 0 ? 
         Math.min(100, Math.round((totalAllocated / result.total_demand_cost) * 100)) : 100,
-      groups: newGroups,
+      groups: updatedGroups,
       summary: {
         ...result.summary,
         total_units_affordable: totalAffordable
