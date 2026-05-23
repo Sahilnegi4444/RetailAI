@@ -133,21 +133,22 @@ def startup():
 # ============================================================
 class PredictRequest(BaseModel):
     prediction_date: str = None
+    category: Optional[str] = None
 
 class FutureAggregateRequest(BaseModel):
-    prediction_date: str = None
-    n_months: int = 3
-    items: List[str] = None  # "YYYY-MM-DD"
+    prediction_date: Optional[str] = None
+    n_months: Optional[int] = 3
+    items: Optional[List[Optional[str]]] = None
 
 
 class PreviousYearsRequest(BaseModel):
-    items: List[str] = []
-    target_date: str = None
+    items: Optional[List[Optional[str]]] = []
+    target_date: Optional[str] = None
 
 
 class LastNMonthsRequest(BaseModel):
-    items: List[str] = []
-    n_months: int = 4
+    items: Optional[List[Optional[str]]] = []
+    n_months: Optional[int] = 4
 
 
 # ============================================================
@@ -311,6 +312,24 @@ def predict_paginated(
 
     all_predictions = forecaster.predict_single_month(target_date.month, target_date.year)
 
+    # Filter by category on the backend before paginating to support custom subcategories correctly
+    category = request.category
+    if category and category.lower() != 'all':
+        if category == 'Grocery I':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'I']
+        elif category == 'Grocery II':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'II']
+        elif category == 'Grocery III':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'III']
+        elif category == 'Grocery IV':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'IV']
+        elif category == 'Grocery V':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'V']
+        elif category == 'Liquor':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Liquor' or p.get('group') == 'VI']
+        else:
+            all_predictions = [p for p in all_predictions if p.get('category') == category]
+
     total_items = len(all_predictions)
     total_pages = math.ceil(total_items / page_size)
     start = (page - 1) * page_size
@@ -393,7 +412,20 @@ def export_csv(
 
     # 1. Apply standard filters
     if category and category.lower() != 'all':
-        all_predictions = [p for p in all_predictions if p.get('category') == category]
+        if category == 'Grocery I':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'I']
+        elif category == 'Grocery II':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'II']
+        elif category == 'Grocery III':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'III']
+        elif category == 'Grocery IV':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'IV']
+        elif category == 'Grocery V':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Grocery' and p.get('group') == 'V']
+        elif category == 'Liquor':
+            all_predictions = [p for p in all_predictions if p.get('category') == 'Liquor' or p.get('group') == 'VI']
+        else:
+            all_predictions = [p for p in all_predictions if p.get('category') == category]
     
     if search:
         search_lower = search.lower()

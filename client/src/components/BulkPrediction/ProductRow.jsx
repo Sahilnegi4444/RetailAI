@@ -41,11 +41,6 @@ const ProductRow = ({ product, isExpanded, onToggleExpand, predictionDate }) => 
           </span>
         </td>
         <td>
-          <span className={`confidence-badge ${product.confidence_level.class}`}>
-            {(product.confidence * 100).toFixed(0)}%
-          </span>
-        </td>
-        <td>
           <button
             onClick={() => onToggleExpand(product.item_id || product.item_name)}
             className="expand-btn"
@@ -57,7 +52,7 @@ const ProductRow = ({ product, isExpanded, onToggleExpand, predictionDate }) => 
       </tr>
       {isExpanded && (
         <tr className="expanded-row">
-          <td colSpan="9">
+          <td colSpan="8">
             <ExpandedDetails product={product} predictionDate={predictionDate} />
           </td>
         </tr>

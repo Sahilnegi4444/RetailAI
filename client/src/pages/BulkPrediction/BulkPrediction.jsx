@@ -163,7 +163,7 @@ const BulkPrediction = () => {
   }, []);
 
   // Fetch predictions with pagination
-  const fetchPredictions = useCallback(async (page = 1) => {
+  const fetchPredictions = useCallback(async (page = 1, categoryOverride = null) => {
     if (page === 1) {
       dispatch({ type: 'SET_LOADING', payload: true });
     } else {
@@ -171,10 +171,14 @@ const BulkPrediction = () => {
     }
     
     try {
+      const categoryToUse = categoryOverride !== null ? categoryOverride : state.filters.category;
       // Use /api proxy when running behind nginx (Docker), direct localhost for local dev
       const apiBase = getApiBase();
       const url = `${apiBase}/predict-paginated?page=${page}&page_size=50`;
-      const body = { prediction_date: state.predictionDate };
+      const body = { 
+        prediction_date: state.predictionDate,
+        category: categoryToUse
+      };
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
@@ -198,8 +202,9 @@ const BulkPrediction = () => {
       const result = await response.json();
       
       if (result && Array.isArray(result.predictions)) {
+        const targetMonthVal = state.predictionDate ? new Date(state.predictionDate).getMonth() + 1 : null;
         const processed = result.predictions
-          .map(processPrediction)
+          .map(p => processPrediction(p, targetMonthVal))
           .filter(p => p !== null);
         
         if (page === 1) {
@@ -227,7 +232,7 @@ const BulkPrediction = () => {
         dispatch({ type: 'SET_ERROR', payload: error.message });
       }
     }
-  }, [state.predictionDate]);
+  }, [state.predictionDate, state.filters.category]);
 
   // Load predictions on mount and when date changes
   useEffect(() => {
@@ -302,7 +307,11 @@ const BulkPrediction = () => {
   // Handlers
   const handleFilterChange = useCallback((key, value) => {
     dispatch({ type: 'UPDATE_FILTER', payload: { key, value } });
-  }, []);
+    if (key === 'category') {
+      dispatch({ type: 'SET_PREDICTIONS', payload: [] });
+      fetchPredictions(1, value);
+    }
+  }, [fetchPredictions]);
 
   const handleBudgetChange = useCallback((budget) => {
     dispatch({ type: 'SET_BUDGET', payload: budget });
@@ -354,11 +363,11 @@ const BulkPrediction = () => {
     abortControllerRef.current = controller;
     
     try {
-      let allItems = state.predictions.map(d => d.item_name);
+      let allItems = state.predictions.map(d => d.item_name).filter(Boolean);
       
       if (state.hasMore) {
         const result = await predictionService.getBulkPredictions(state.predictionDate);
-        allItems = (result.predictions || []).map(p => p.item_name);
+        allItems = (result.predictions || []).map(p => p.item_name).filter(Boolean);
       }
 
       const result = await predictionService.getFutureAggregatePredictions(
@@ -394,7 +403,22 @@ const BulkPrediction = () => {
 
     // Apply category filter
     if (state.filters.category !== 'all') {
-      results = results.filter(item => item.category === state.filters.category);
+      const catFilter = state.filters.category;
+      if (catFilter === 'Grocery I') {
+        results = results.filter(item => item.category === 'Grocery' && item.group === 'I');
+      } else if (catFilter === 'Grocery II') {
+        results = results.filter(item => item.category === 'Grocery' && item.group === 'II');
+      } else if (catFilter === 'Grocery III') {
+        results = results.filter(item => item.category === 'Grocery' && item.group === 'III');
+      } else if (catFilter === 'Grocery IV') {
+        results = results.filter(item => item.category === 'Grocery' && item.group === 'IV');
+      } else if (catFilter === 'Grocery V') {
+        results = results.filter(item => item.category === 'Grocery' && item.group === 'V');
+      } else if (catFilter === 'Liquor') {
+        results = results.filter(item => item.category === 'Liquor' || item.group === 'VI');
+      } else {
+        results = results.filter(item => item.category === catFilter);
+      }
     }
 
     // Apply budget filter for prediction results
@@ -667,7 +691,6 @@ const BulkPrediction = () => {
                   <th>Unit Price (₹)</th>
                   <th>Total Cost (₹)</th>
                   <th>Order Qty</th>
-                  <th>Confidence</th>
                 </tr>
               </thead>
               <tbody>
@@ -696,15 +719,10 @@ const BulkPrediction = () => {
                       <td>₹{salesPrice.toFixed(2)}</td>
                       <td style={{ fontWeight: 'bold', color: '#10b981' }}>₹{Math.round(orderCost).toLocaleString('en-IN')}</td>
                       <td>{(pred.recommended_order || demand).toLocaleString('en-IN')}</td>
-                      <td>
-                        <span className={`confidence-badge ${pred.confidence > 0.7 ? 'high' : pred.confidence > 0.5 ? 'medium' : 'low'}`}>
-                          {((pred.confidence || 0) * 100).toFixed(1)}%
-                        </span>
-                      </td>
                     </tr>
                     {state.expandedResultId === pred.item_name && (
                       <tr className="expanded-row">
-                        <td colSpan="8">
+                        <td colSpan="7">
                           <div className="prediction-details-panel">
                             <h3>📊 {pred.item_name} - Bulk Order Summary</h3>
                             
@@ -744,30 +762,6 @@ const BulkPrediction = () => {
                               <div className="stat-card">
                                 <div className="stat-label">Purchase Price</div>
                                 <div className="stat-value">₹{purchasePrice.toFixed(2)}</div>
-                              </div>
-                              <div className="stat-card">
-                                <div className="stat-label">Confidence</div>
-                                <div className="stat-value">
-                                  <span className={`confidence-badge ${pred.confidence > 0.7 ? 'high' : 'medium'}`}>
-                                    {((pred.confidence || 0) * 100).toFixed(1)}%
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="confidence-analysis">
-                              <h4>🎯 Forecast Analysis</h4>
-                              <div className="confidence-details">
-                                <div className="confidence-explanation">
-                                  <p>📦 <strong>Bulk Order:</strong> Stock {demand.toLocaleString('en-IN')} units of {pred.item_name} to cover demand for the next {pred.n_months || state.selectedMonths} months.</p>
-                                  <p>💰 <strong>Budget Required:</strong> ₹{Math.round(orderCost).toLocaleString('en-IN')} at ₹{purchasePrice.toFixed(2)}/unit.</p>
-                                  <p>📈 <strong>Expected Profit:</strong> ₹{Math.round(expectedProfit).toLocaleString('en-IN')} ({profitMargin.toFixed(1)}% margin).</p>
-                                  {pred.confidence < 0.7 && (
-                                    <p className="confidence-recommendation">
-                                      💡 <strong>Note:</strong> Confidence is below 70% — consider ordering 10-15% extra as buffer.
-                                    </p>
-                                  )}
-                                </div>
                               </div>
                             </div>
                           </div>

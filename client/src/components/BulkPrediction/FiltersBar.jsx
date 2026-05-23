@@ -82,8 +82,12 @@ const FiltersBar = ({
             className="filter-select"
           >
             <option value="all">All Categories</option>
-            <option value="Grocery">Grocery</option>
-            <option value="Liquor">Liquor</option>
+            <option value="Grocery I">Grocery I (Group I)</option>
+            <option value="Grocery II">Grocery II (Group II)</option>
+            <option value="Grocery III">Grocery III (Group III)</option>
+            <option value="Grocery IV">Grocery IV (Group IV)</option>
+            <option value="Grocery V">Grocery V (Group V)</option>
+            <option value="Liquor">Liquor (Group VI)</option>
           </select>
         </div>
 
@@ -130,7 +134,6 @@ const FiltersBar = ({
             <option value="name">Name</option>
             <option value="demand">Demand</option>
             <option value="stock">Stock</option>
-            <option value="confidence">Confidence</option>
           </select>
         </div>
 

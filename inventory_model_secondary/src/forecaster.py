@@ -433,6 +433,8 @@ class DemandForecaster:
                 },
                 'year_prev_total': year_totals.get(prev_year, 0),
                 'year_curr_total': year_totals.get(max_year, 0),
+                'month': target_month,
+                'year': target_year,
             })
 
         # Cache the results in memory
@@ -552,24 +554,55 @@ class DemandForecaster:
         # Prepare final results using the logic from predict_single_month for metadata
         # We reuse the "metadata" from the last step but overwrite the prediction with the aggregate
         results = []
+        sorted_df = self.df.sort_values(['Item_Name', 'Date'])
+        
+        # Get absolute last non-NaN Closing_Stock row for each item in the entire dataset
+        last_valid_cs_rows = sorted_df[sorted_df['Closing_Stock'].notna()].groupby('Item_ID').tail(1).set_index('Item_ID')
+        last_known_cs = last_valid_cs_rows['Closing_Stock'].to_dict()
+
+        # Get absolute last non-NaN O_B row for each item in the entire dataset
+        last_valid_ob_rows = sorted_df[sorted_df['O_B'].notna()].groupby('Item_ID').tail(1).set_index('Item_ID')
+        last_known_ob = last_valid_ob_rows['O_B'].to_dict()
         
         # Pre-compute maps for efficiency
         price_map = self.df.groupby('Item_Name')['R_Rate'].last().to_dict()
         w_price_map = self.df.groupby('Item_Name')['W_Rate'].last().to_dict()
         cat_map = self.df.groupby('Item_Name')['Category'].last().to_dict()
+        group_map = self.df.groupby('Item_Name')['Group'].last().to_dict()
+        item_id_map = self.df.groupby('Item_Name')['Item_ID'].last().to_dict()
+        
+        # Create stock map by item_name
+        stock_by_name = {}
+        for item_name, item_id in item_id_map.items():
+            cs = last_known_cs.get(item_id)
+            if cs is not None and not pd.isna(cs):
+                stock_by_name[item_name] = float(cs)
+            else:
+                ob = last_known_ob.get(item_id)
+                if ob is not None and not pd.isna(ob):
+                    stock_by_name[item_name] = float(ob)
+                else:
+                    stock_by_name[item_name] = 0.0
         
         for item_name, total_pred in aggregate_demand.items():
+            cs_val = stock_by_name.get(item_name, 0.0)
+            rec_order = max(0, int(round(total_pred - cs_val)))
             results.append({
+                'item_id': str(item_id_map.get(item_name, '')),
                 'item_name': item_name,
                 'category': cat_map.get(item_name, 'Unknown'),
-                'prediction': total_pred,
-                'final_prediction': total_pred,
+                'group': group_map.get(item_name, 'II'),
+                'prediction': round(total_pred, 1),
+                'final_prediction': round(total_pred, 1),
                 'price': float(price_map.get(item_name, 0)),
                 'purchase_price': float(w_price_map.get(item_name, 0)),
-                'recommended_order': int(round(total_pred)),
+                'current_stock': int(cs_val),
+                'recommended_order': rec_order,
                 'is_aggregate': True,
                 'n_months': n_months,
                 'start_date': target_date.strftime('%Y-%m'),
+                'month': start_month,
+                'year': start_year,
             })
             
         return results

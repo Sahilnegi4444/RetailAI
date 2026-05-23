@@ -88,7 +88,7 @@ export const getOrderPriority = (currentStock, predictedDemand, trend) => {
 /**
  * Process prediction data for display
  */
-export const processPrediction = (prediction) => {
+export const processPrediction = (prediction, targetMonth = null) => {
   if (!prediction) return null;
   
   // Backend returns 'prediction', frontend uses 'final_prediction'
@@ -98,12 +98,17 @@ export const processPrediction = (prediction) => {
   const growthRate = safeNumber(prediction.growth_rate);
   const trend = prediction.trend || prediction.statistics?.trend || 'stable';
   
+  // Detect active month (1-12)
+  const activeMonth = targetMonth || (prediction.month ? parseInt(prediction.month) : null);
+  
   // Build all_monthly_data and historical_stats from historical_sales if needed
   let all_monthly_data = prediction.all_monthly_data || [];
   let historical_stats = prediction.historical_stats || { min: 0, max: 0, avg: 0, count: 0 };
   
   if (prediction.historical_sales && all_monthly_data.length === 0) {
     let sum = 0, count = 0, min = Infinity, max = -Infinity;
+    
+    // 1. Populate all monthly chronological sales data for charts/tables
     Object.keys(prediction.historical_sales).forEach(yr => {
       Object.keys(prediction.historical_sales[yr]).forEach(mo => {
         const sales = prediction.historical_sales[yr][mo];
@@ -112,18 +117,41 @@ export const processPrediction = (prediction) => {
           month: parseInt(mo),
           sales: sales
         });
-        sum += sales;
-        count++;
-        if (sales < min) min = sales;
-        if (sales > max) max = sales;
       });
     });
     // Sort descending (newest first)
     all_monthly_data.sort((a, b) => b.year !== a.year ? b.year - a.year : b.month - a.month);
     
+    // 2. Calculate seasonal statistics strictly for the target active month across all years
+    if (activeMonth) {
+      Object.keys(prediction.historical_sales).forEach(yr => {
+        const sales = prediction.historical_sales[yr][activeMonth];
+        if (sales !== undefined && sales !== null) {
+          sum += sales;
+          count++;
+          if (sales < min) min = sales;
+          if (sales > max) max = sales;
+        }
+      });
+    } else {
+      // Fallback: calculate overall stats if activeMonth is not specified
+      Object.keys(prediction.historical_sales).forEach(yr => {
+        Object.keys(prediction.historical_sales[yr]).forEach(mo => {
+          const sales = prediction.historical_sales[yr][mo];
+          sum += sales;
+          count++;
+          if (sales < min) min = sales;
+          if (sales > max) max = sales;
+        });
+      });
+    }
+    
     if (count > 0) {
       historical_stats = {
-        min, max, avg: sum / count, count: Object.keys(prediction.historical_sales).length
+        min: min === Infinity ? 0 : min,
+        max: max === -Infinity ? 0 : max,
+        avg: sum / count,
+        count: count
       };
     } else {
       historical_stats = { min: 0, max: 0, avg: 0, count: 0 };
@@ -174,7 +202,22 @@ export const filterPredictions = (predictions, filters) => {
   
   // Category filter
   if (filters.category && filters.category !== 'all') {
-    filtered = filtered.filter(p => p.category === filters.category);
+    const cat = filters.category;
+    if (cat === 'Grocery I') {
+      filtered = filtered.filter(p => p.category === 'Grocery' && p.group === 'I');
+    } else if (cat === 'Grocery II') {
+      filtered = filtered.filter(p => p.category === 'Grocery' && p.group === 'II');
+    } else if (cat === 'Grocery III') {
+      filtered = filtered.filter(p => p.category === 'Grocery' && p.group === 'III');
+    } else if (cat === 'Grocery IV') {
+      filtered = filtered.filter(p => p.category === 'Grocery' && p.group === 'IV');
+    } else if (cat === 'Grocery V') {
+      filtered = filtered.filter(p => p.category === 'Grocery' && p.group === 'V');
+    } else if (cat === 'Liquor') {
+      filtered = filtered.filter(p => p.category === 'Liquor' || p.group === 'VI');
+    } else {
+      filtered = filtered.filter(p => p.category === cat);
+    }
   }
   
   // Stock status filter
