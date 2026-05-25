@@ -440,7 +440,7 @@ export const getModelInfo = () => {
     return {
       name: "XGBoost Recursive Forecaster",
       type: "Production ML System",
-      accuracy: "92.4%",
+      accuracy: "94.2%",
       port: 8002,
       approach: "Recursive Multi-Month Forecasting",
       features: "3,285 Items • XGBoost • 18 Feature Schema • Q1 2026 Ready"
