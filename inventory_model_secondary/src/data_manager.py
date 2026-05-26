@@ -267,10 +267,12 @@ class DataManager:
         try:
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(DISTINCT item_name) FROM inventory_sales")
-            count = cursor.fetchone()[0]
+            cursor.execute("SELECT DISTINCT item_name FROM inventory_sales")
+            items = [r[0] for r in cursor.fetchall() if r[0]]
             conn.close()
-            return int(count)
+            # Filter out numeric-only items
+            valid_items = [name for name in items if not all(c.isdigit() or c in '.- ' for c in name)]
+            return len(valid_items)
         except Exception as e:
             print(f"[DATA MANAGER] Error counting DB items: {e}")
             return self.df['Item_Name'].nunique()
@@ -290,7 +292,12 @@ class DataManager:
             """)
             rows = cursor.fetchall()
             conn.close()
-            return [{'item_name': r[0], 'category': r[1]} for r in rows]
+            # Filter out numeric-only items
+            return [
+                {'item_name': r[0], 'category': r[1]} 
+                for r in rows 
+                if r[0] and not all(c.isdigit() or c in '.- ' for c in r[0])
+            ]
         except Exception as e:
             print(f"[DATA MANAGER] Error reading DB: {e}")
             return []

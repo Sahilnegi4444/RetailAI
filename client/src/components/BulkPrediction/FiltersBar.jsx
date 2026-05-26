@@ -54,26 +54,6 @@ const FiltersBar = ({
         </div>
 
         <div className="filter-group">
-          <label htmlFor="budget">💰 Budget (Lakhs)</label>
-          <input
-            id="budget"
-            type="number"
-            placeholder="e.g., 10 for 10 lakhs"
-            value={budgetInput}
-            onChange={handleBudgetChange}
-            min="0"
-            step="0.5"
-            className="budget-input"
-          />
-          {budgetSummary && (
-            <div className="budget-info">
-              ✓ {budgetSummary.itemsSelected} items | ₹{Math.round(budgetSummary.spent).toLocaleString()} spent
-            </div>
-          )}
-        </div>
-
-
-        <div className="filter-group">
           <label htmlFor="category">Category</label>
           <select
             id="category"
@@ -158,14 +138,6 @@ const FiltersBar = ({
 
       <div className="results-info">
         Showing {filteredItems} of {totalItems} items
-        {budgetSummary && (
-          <span className="budget-summary">
-            | 💰 Budget: ₹{budgetSummary.budget.toLocaleString()} | Spent: ₹{budgetSummary.spent.toLocaleString()} | Remaining: ₹{budgetSummary.remaining.toLocaleString()}
-            {Array.isArray(budgetSummary.groups) && budgetSummary.groups.length > 0 ? (
-              <> | Split: {budgetSummary.groups.slice(0, 3).map(g => `${g.key} ₹${Math.round(g.spent).toLocaleString()}`).join(' • ')}{budgetSummary.groups.length > 3 ? ' • …' : ''}</>
-            ) : null}
-          </span>
-        )}
       </div>
     </div>
   );

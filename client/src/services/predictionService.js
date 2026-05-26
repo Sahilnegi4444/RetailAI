@@ -118,14 +118,31 @@ export const predictionService = {
   exportToCSV(predictions, filename = 'predictions.csv') {
     if (!predictions || predictions.length === 0) return;
 
+    let totalSoldSum = 0;
+    let totalCostSum = 0;
+    let totalRevenueSum = 0;
+    let totalProfitSum = 0;
+    let totalOrderQtySum = 0;
+    let totalOrderCostSum = 0;
+
     const dataRows = predictions.map(p => {
       const salesPrice = p.price || 0;
       const purchasePrice = p.purchase_price || 0;
-      const predictedDemand = Math.round(p.final_prediction || 0);
+      const predictedDemand = Math.round(p.final_prediction || p.prediction || 0);
       
       const expectedRevenue = salesPrice * predictedDemand;
       const expectedCost = purchasePrice * predictedDemand;
       const expectedProfit = expectedRevenue - expectedCost;
+      
+      const recommendedOrder = p.recommended_order || 0;
+      const orderCost = recommendedOrder * purchasePrice;
+      
+      totalSoldSum += predictedDemand;
+      totalCostSum += expectedCost;
+      totalRevenueSum += expectedRevenue;
+      totalProfitSum += expectedProfit;
+      totalOrderQtySum += recommendedOrder;
+      totalOrderCostSum += orderCost;
       
       return {
         'Group': p.group || 'II',
@@ -136,11 +153,32 @@ export const predictionService = {
         'category': p.category,
         'current_stock': p.current_stock || 0,
         'purchase_price': purchasePrice.toFixed(2),
-        'potential_revenue': expectedRevenue.toFixed(2),
-        'potential_profit': expectedProfit.toFixed(2),
+        'Demand Cost (₹)': expectedCost.toFixed(2),
+        'Predicted Demand Value (₹)': expectedRevenue.toFixed(2),
+        'Order Qty': recommendedOrder,
+        'Order Cost (₹)': orderCost.toFixed(2),
+        'Potential Profit (₹)': expectedProfit.toFixed(2),
         'trend': p.trend || 'stable',
         'growth_rate': `${((p.growth_rate || 0) * 100).toFixed(1)}%`
       };
+    });
+
+    dataRows.push({
+      'Group': 'TOTAL',
+      'Product Name': 'All Products Summary',
+      'Total Sold': totalSoldSum,
+      'Avg Price (₹)': '',
+      'item_id': '',
+      'category': '',
+      'current_stock': '',
+      'purchase_price': '',
+      'Demand Cost (₹)': totalCostSum.toFixed(2),
+      'Predicted Demand Value (₹)': totalRevenueSum.toFixed(2),
+      'Order Qty': totalOrderQtySum,
+      'Order Cost (₹)': totalOrderCostSum.toFixed(2),
+      'Potential Profit (₹)': totalProfitSum.toFixed(2),
+      'trend': '',
+      'growth_rate': ''
     });
 
     const csvRows = [];

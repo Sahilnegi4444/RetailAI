@@ -134,6 +134,11 @@ def startup():
 class PredictRequest(BaseModel):
     prediction_date: str = None
     category: Optional[str] = None
+    search: Optional[str] = None
+    stock_status: Optional[str] = None
+    trend: Optional[str] = None
+    sort_by: Optional[str] = None
+    sort_order: Optional[str] = None
 
 class FutureAggregateRequest(BaseModel):
     prediction_date: Optional[str] = None
@@ -301,6 +306,7 @@ def predict_paginated(
     """
     Paginated prediction — same logic as /predict but returns a page slice.
     The frontend's infinite scroll and export features use this.
+    Supports complete backend filtering, sorting, and catalog-wide summary statistics.
     """
     _require_ready()
     date_str = request.prediction_date or datetime.now().strftime("%Y-%m-%d")
@@ -312,7 +318,7 @@ def predict_paginated(
 
     all_predictions = forecaster.predict_single_month(target_date.month, target_date.year)
 
-    # Filter by category on the backend before paginating to support custom subcategories correctly
+    # 1. Filter by Category
     category = request.category
     if category and category.lower() != 'all':
         if category == 'Grocery I':
@@ -330,7 +336,117 @@ def predict_paginated(
         else:
             all_predictions = [p for p in all_predictions if p.get('category') == category]
 
+    # 2. Filter by Search Query
+    if request.search:
+        search_lower = request.search.lower()
+        all_predictions = [p for p in all_predictions if search_lower in p.get('item_name', '').lower()]
+
+    # 3. Filter by Stock Status
+    # frontend values: 'critical', 'low', 'adequate', 'excess'
+    if request.stock_status and request.stock_status.lower() != 'all':
+        val = request.stock_status.lower()
+        filtered = []
+        for p in all_predictions:
+            demand = p.get('final_prediction', 0) or p.get('prediction', 0) or 0
+            stock = p.get('current_stock', 0) or 0
+            
+            # Stock Status logic mapping
+            if stock == 0 or stock < demand * 0.5:
+                status_class = 'critical'
+            elif stock < demand:
+                status_class = 'low'
+            elif stock < demand * 1.5:
+                status_class = 'adequate'
+            else:
+                status_class = 'excess'
+                
+            if status_class == val:
+                filtered.append(p)
+        all_predictions = filtered
+
+    # 4. Filter by Trend
+    # frontend values: 'increasing', 'stable', 'decreasing'
+    if request.trend and request.trend.lower() != 'all':
+        val = request.trend.lower()
+        all_predictions = [p for p in all_predictions if p.get('trend', 'stable') == val]
+
+    # Calculate overall catalog-wide/filtered-dataset summary statistics BEFORE pagination slicing
     total_items = len(all_predictions)
+    critical_items = 0
+    low_stock_items = 0
+    adequate_items = 0
+    
+    total_demand = 0
+    total_stock = 0
+    total_order_value = 0
+    total_revenue = 0
+    
+    increasing_trend = 0
+    stable_trend = 0
+    decreasing_trend = 0
+    
+    for p in all_predictions:
+        demand = p.get('final_prediction', 0) or p.get('prediction', 0) or 0
+        stock = p.get('current_stock', 0) or 0
+        purchase_price = p.get('purchase_price', 0) or 0
+        sales_price = p.get('price', 0) or 0
+        
+        total_demand += demand
+        total_stock += stock
+        
+        rounded_demand = round(demand)
+        recommended_order = p.get('recommended_order', 0) or 0
+        total_order_value += float(recommended_order) * float(purchase_price)
+        total_revenue += rounded_demand * float(sales_price)
+        
+        # Stock Status
+        if stock == 0 or stock < demand * 0.5:
+            critical_items += 1
+        elif stock < demand:
+            low_stock_items += 1
+        elif stock < demand * 1.5:
+            adequate_items += 1
+            
+        # Trends
+        trend = p.get('trend', 'stable')
+        if trend == 'increasing':
+            increasing_trend += 1
+        elif trend == 'decreasing':
+            decreasing_trend += 1
+        else:
+            stable_trend += 1
+
+    # 5. Apply Sorting
+    # sort_by values: 'priority', 'name', 'demand', 'stock'
+    if request.sort_by:
+        def get_sort_key(p):
+            demand = p.get('final_prediction', 0) or p.get('prediction', 0) or 0
+            stock = p.get('current_stock', 0) or 0
+            trend = p.get('trend', 'stable')
+            
+            if request.sort_by == 'name':
+                return p.get('item_name', '').lower()
+            elif request.sort_by == 'demand':
+                return float(demand)
+            elif request.sort_by == 'stock':
+                return float(stock)
+            elif request.sort_by == 'priority':
+                if stock == 0:
+                    return 1
+                elif stock < demand * 0.5:
+                    return 2
+                elif stock < demand:
+                    return 3
+                elif trend == 'increasing' and stock < demand * 1.5:
+                    return 4
+                else:
+                    return 5
+            return 0
+
+        reverse = (request.sort_order == 'desc')
+        all_predictions = sorted(all_predictions, key=get_sort_key, reverse=reverse)
+
+    # 6. Apply Slicing
     total_pages = math.ceil(total_items / page_size)
     start = (page - 1) * page_size
     end = start + page_size
@@ -340,7 +456,18 @@ def predict_paginated(
         "prediction_date": date_str,
         "model": "xgboost_recursive",
         "summary": {
-            "total_items": total_items,
+            "totalItems": total_items,
+            "criticalItems": critical_items,
+            "lowStockItems": low_stock_items,
+            "adequateItems": adequate_items,
+            "totalDemand": round(total_demand),
+            "totalStock": round(total_stock),
+            "totalOrderValue": round(total_order_value),
+            "totalRevenue": round(total_revenue),
+            "increasingTrend": increasing_trend,
+            "stableTrend": stable_trend,
+            "decreasingTrend": decreasing_trend,
+            "avgConfidence": 0.8,
         },
         "predictions": page_predictions,
         "pagination": {
@@ -439,33 +566,83 @@ def export_csv(
     output = io.StringIO()
     output.write('\ufeff') # Add BOM for Excel
     
-    # Define headers to match image
+    # Define headers to match predictions data exactly
     fieldnames = [
         'Group', 'Product Name', 'Total Sold', 'Avg Price (₹)',
         'item_id', 'category', 'current_stock', 'purchase_price', 
-        'potential_revenue', 'potential_profit', 'trend', 'growth_rate'
+        'Demand Cost (₹)', 'Predicted Demand Value (₹)', 
+        'Order Qty', 'Order Cost (₹)', 'Potential Profit (₹)',
+        'trend', 'growth_rate'
     ]
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     output.write('--- Product Details ---\n')
     writer.writeheader()
     
+    total_sold_sum = 0
+    total_cost_sum = 0
+    total_revenue_sum = 0
+    total_profit_sum = 0
+    total_order_qty_sum = 0
+    total_order_cost_sum = 0
+    
     for p in all_predictions:
+        demand = p.get('final_prediction', 0) or p.get('prediction', 0) or 0
+        sales_price = p.get('price', 0) or 0
+        purchase_price = p.get('purchase_price', 0) or 0
+        rounded_demand = round(demand)
+        
+        expected_revenue = rounded_demand * sales_price
+        expected_cost = rounded_demand * purchase_price
+        expected_profit = expected_revenue - expected_cost
+        
+        recommended_order = p.get('recommended_order', 0) or 0
+        order_cost = recommended_order * purchase_price
+        
+        total_sold_sum += rounded_demand
+        total_cost_sum += expected_cost
+        total_revenue_sum += expected_revenue
+        total_profit_sum += expected_profit
+        total_order_qty_sum += recommended_order
+        total_order_cost_sum += order_cost
+        
         row = {
             'Group': p.get('group', 'II'),
             'Product Name': p.get('item_name'),
-            'Total Sold': p.get('final_prediction', 0),
-            'Avg Price (₹)': p.get('price', 0),
+            'Total Sold': rounded_demand,
+            'Avg Price (₹)': round(sales_price, 2),
             'item_id': p.get('item_id'),
             'category': p.get('category'),
             'current_stock': p.get('current_stock', 0),
-            'purchase_price': p.get('purchase_price', 0),
-            'potential_revenue': round(p.get('final_prediction', 0) * p.get('price', 0), 2),
-            'potential_profit': round(p.get('final_prediction', 0) * (p.get('price', 0) - p.get('purchase_price', 0)), 2),
+            'purchase_price': round(purchase_price, 2),
+            'Demand Cost (₹)': round(expected_cost, 2),
+            'Predicted Demand Value (₹)': round(expected_revenue, 2),
+            'Order Qty': recommended_order,
+            'Order Cost (₹)': round(order_cost, 2),
+            'Potential Profit (₹)': round(expected_profit, 2),
             'trend': p.get('trend', 'stable'),
             'growth_rate': f"{p.get('growth_rate', 0)*100:.1f}%"
         }
         writer.writerow(row)
+        
+    # Write a summary Total row at the bottom of the CSV
+    writer.writerow({
+        'Group': 'TOTAL',
+        'Product Name': 'All Products Summary',
+        'Total Sold': total_sold_sum,
+        'Avg Price (₹)': '',
+        'item_id': '',
+        'category': '',
+        'current_stock': '',
+        'purchase_price': '',
+        'Demand Cost (₹)': round(total_cost_sum, 2),
+        'Predicted Demand Value (₹)': round(total_revenue_sum, 2),
+        'Order Qty': total_order_qty_sum,
+        'Order Cost (₹)': round(total_order_cost_sum, 2),
+        'Potential Profit (₹)': round(total_profit_sum, 2),
+        'trend': '',
+        'growth_rate': ''
+    })
     
     output.seek(0)
     

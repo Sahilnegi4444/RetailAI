@@ -62,8 +62,10 @@ class DemandForecaster:
             conn.close()
 
         self.df['Date'] = pd.to_datetime(self.df['Date'])
+        # Filter out corrupted numeric-only item names from the dataset
+        self.df = self.df[~self.df['Item_Name'].apply(lambda x: isinstance(x, str) and all(c.isdigit() or c in '.- ' for c in x))]
         self.df = self.df.sort_values(by=['Date', 'Item_ID']).reset_index(drop=True)
-        print(f"[FORECASTER] Loaded {len(self.df)} records for {self.df['Item_ID'].nunique()} items.")
+        print(f"[FORECASTER] Loaded {len(self.df)} records for {self.df['Item_Name'].nunique()} unique valid items.")
 
     def reload_data(self):
         """Reload data from the SQLite database."""
@@ -75,7 +77,7 @@ class DemandForecaster:
 
     def get_item_list(self):
         """Return unique items with their metadata."""
-        last_state = self.df.sort_values('Date').groupby('Item_ID').tail(1)
+        last_state = self.df.sort_values('Date').groupby('Item_Name').tail(1)
         items = []
         for _, row in last_state.iterrows():
             items.append({
@@ -189,7 +191,7 @@ class DemandForecaster:
         Get the latest state for every item (last known row).
         This is the starting point for recursive forecasting.
         """
-        return self.df.sort_values('Date').groupby('Item_ID').tail(1).copy()
+        return self.df.sort_values('Date').groupby('Item_Name').tail(1).copy()
 
     def _encode_features(self, df):
         """
@@ -360,28 +362,28 @@ class DemandForecaster:
         # This resolves the issue where items not listed in recent months still have last known stock.
         
         # Get absolute last non-NaN Closing_Stock row for each item in the entire dataset
-        last_valid_cs_rows = sorted_df[sorted_df['Closing_Stock'].notna()].groupby('Item_ID').tail(1).set_index('Item_ID')
+        last_valid_cs_rows = sorted_df[sorted_df['Closing_Stock'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
         last_known_cs = last_valid_cs_rows['Closing_Stock'].to_dict()
 
         # Get absolute last non-NaN O_B row for each item in the entire dataset
-        last_valid_ob_rows = sorted_df[sorted_df['O_B'].notna()].groupby('Item_ID').tail(1).set_index('Item_ID')
+        last_valid_ob_rows = sorted_df[sorted_df['O_B'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
         last_known_ob = last_valid_ob_rows['O_B'].to_dict()
 
         closing_stock_dict = {}
         stock_data_known = set()
 
-        for item_id in sorted_df['Item_ID'].unique():
-            cs = last_known_cs.get(item_id)
+        for item_name in sorted_df['Item_Name'].unique():
+            cs = last_known_cs.get(item_name)
             if cs is not None and not pd.isna(cs):
-                closing_stock_dict[item_id] = float(cs)
-                stock_data_known.add(item_id)
+                closing_stock_dict[item_name] = float(cs)
+                stock_data_known.add(item_name)
             else:
-                ob = last_known_ob.get(item_id)
+                ob = last_known_ob.get(item_name)
                 if ob is not None and not pd.isna(ob):
-                    closing_stock_dict[item_id] = float(ob)
-                    stock_data_known.add(item_id)
+                    closing_stock_dict[item_name] = float(ob)
+                    stock_data_known.add(item_name)
                 else:
-                    closing_stock_dict[item_id] = 0.0
+                    closing_stock_dict[item_name] = 0.0
 
         # --- END VECTORIZED PRE-COMPUTATIONS ---
         
@@ -396,9 +398,9 @@ class DemandForecaster:
             last_3 = last_3_dict.get(item_name, [])
             
             # Closing stock logic — closing_stock_dict covers all items (built above)
-            closing_stock = float(closing_stock_dict.get(item_id, 0.0))
+            closing_stock = float(closing_stock_dict.get(item_name, 0.0))
             if pd.isna(closing_stock): closing_stock = 0.0
-            stock_known = item_id in stock_data_known
+            stock_known = item_name in stock_data_known
 
             prediction = float(preds[i])
 

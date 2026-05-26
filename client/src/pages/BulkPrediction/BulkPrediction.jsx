@@ -24,6 +24,7 @@ const initialState = {
   predictions: [],
   loading: false,
   error: null,
+  totalSummary: null, // Stores backend catalog-wide calculations
   predictionDate: new Date().toISOString().split('T')[0],
   expandedId: null,
   filters: {
@@ -66,8 +67,21 @@ const reducer = (state, action) => {
     case 'SET_ERROR':
       return { ...state, error: action.payload, loading: false };
     
-    case 'SET_PREDICTIONS':
-      return { ...state, predictions: action.payload, loading: false, error: null };
+    case 'SET_PREDICTIONS': {
+      const predictions = Array.isArray(action.payload) 
+        ? action.payload 
+        : (action.payload?.predictions || []);
+      const summary = Array.isArray(action.payload)
+        ? null
+        : (action.payload?.summary || null);
+      return { 
+        ...state, 
+        predictions, 
+        totalSummary: summary,
+        loading: false, 
+        error: null 
+      };
+    }
     
     case 'APPEND_PREDICTIONS':
       return { ...state, predictions: [...state.predictions, ...action.payload], isLoadingMore: false };
@@ -177,7 +191,12 @@ const BulkPrediction = () => {
       const url = `${apiBase}/predict-paginated?page=${page}&page_size=50`;
       const body = { 
         prediction_date: state.predictionDate,
-        category: categoryToUse
+        category: categoryToUse,
+        search: state.filters.search || null,
+        stock_status: state.filters.stockStatus || null,
+        trend: state.filters.trend || null,
+        sort_by: state.filters.sortBy || null,
+        sort_order: state.filters.sortOrder || null
       };
       
       const controller = new AbortController();
@@ -192,13 +211,13 @@ const BulkPrediction = () => {
         body: JSON.stringify(body),
         signal: controller.signal
       });
-
+ 
       clearTimeout(timeoutId);
-
+ 
       if (!response.ok) {
         throw new Error(`API Error: ${response.status}`);
       }
-
+ 
       const result = await response.json();
       
       if (result && Array.isArray(result.predictions)) {
@@ -208,7 +227,13 @@ const BulkPrediction = () => {
           .filter(p => p !== null);
         
         if (page === 1) {
-          dispatch({ type: 'SET_PREDICTIONS', payload: processed });
+          dispatch({ 
+            type: 'SET_PREDICTIONS', 
+            payload: { 
+              predictions: processed, 
+              summary: result.summary 
+            } 
+          });
         } else {
           dispatch({ type: 'APPEND_PREDICTIONS', payload: processed });
         }
@@ -232,12 +257,27 @@ const BulkPrediction = () => {
         dispatch({ type: 'SET_ERROR', payload: error.message });
       }
     }
-  }, [state.predictionDate, state.filters.category]);
+  }, [state.predictionDate, state.filters]);
 
-  // Load predictions on mount and when date changes
+  // Load predictions on mount and when date or filters change
   useEffect(() => {
+    dispatch({ type: 'SET_PREDICTIONS', payload: [] });
+    // Reset page pagination
+    dispatch({
+      type: 'SET_PAGINATION',
+      payload: { page: 1, hasMore: true, total: 0 }
+    });
     fetchPredictions(1);
-  }, [fetchPredictions]);
+  }, [
+    state.predictionDate, 
+    state.filters.search, 
+    state.filters.category, 
+    state.filters.stockStatus, 
+    state.filters.trend, 
+    state.filters.sortBy, 
+    state.filters.sortOrder,
+    fetchPredictions
+  ]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -278,15 +318,16 @@ const BulkPrediction = () => {
     };
   }, [state.hasMore, state.currentPage, state.isLoadingMore, state.loading, fetchPredictions]);
 
-  // Process predictions with filters and sorting
+  // Shifting infinite scroll filtering/sorting to the backend
   const processedProducts = useMemo(() => {
-    let filtered = filterPredictions(state.predictions, state.filters);
-    let sorted = sortPredictions(filtered, state.filters.sortBy, state.filters.sortOrder);
-    return sorted;
-  }, [state.predictions, state.filters]);
+    return state.predictions;
+  }, [state.predictions]);
 
   // Calculate summary statistics
   const summary = useMemo(() => {
+    if (state.totalSummary) {
+      return state.totalSummary;
+    }
     try {
       if (!processedProducts || !Array.isArray(processedProducts)) {
         return calculateSummary([]);
@@ -296,7 +337,7 @@ const BulkPrediction = () => {
       console.error('Summary calculation failed:', err);
       return calculateSummary([]);
     }
-  }, [processedProducts]);
+  }, [processedProducts, state.totalSummary]);
 
   // Smart budget filtering - prioritize by demand
   const budgetFilteredProducts = useMemo(() => {
@@ -307,11 +348,9 @@ const BulkPrediction = () => {
   // Handlers
   const handleFilterChange = useCallback((key, value) => {
     dispatch({ type: 'UPDATE_FILTER', payload: { key, value } });
-    if (key === 'category') {
-      dispatch({ type: 'SET_PREDICTIONS', payload: [] });
-      fetchPredictions(1, value);
-    }
-  }, [fetchPredictions]);
+    // Reset predictions and pagination, which reactive useEffect will pick up to load page 1
+    dispatch({ type: 'SET_PREDICTIONS', payload: [] });
+  }, []);
 
   const handleBudgetChange = useCallback((budget) => {
     dispatch({ type: 'SET_BUDGET', payload: budget });
@@ -481,7 +520,7 @@ const BulkPrediction = () => {
     const rows = [];
     rows.push(['--- Product Details ---']);
     
-    // Define headers
+    // Define headers to match predictions data exactly
     const headers = [
       'Group',
       'Product Name', 
@@ -491,19 +530,40 @@ const BulkPrediction = () => {
       'category',
       'current_stock', 
       'purchase_price', 
-      'potential_revenue', 
-      'potential_profit', 
+      'Demand Cost (₹)',
+      'Predicted Demand Value (₹)',
+      'Order Qty',
+      'Order Cost (₹)',
+      'Potential Profit (₹)',
       'trend',
       'growth_rate'
     ];
     rows.push(headers);
     
+    let totalSoldSum = 0;
+    let totalCostSum = 0;
+    let totalRevenueSum = 0;
+    let totalProfitSum = 0;
+    let totalOrderQtySum = 0;
+    let totalOrderCostSum = 0;
+
     filteredPredictionResults.forEach(pred => {
       const demand = Math.round(pred.final_prediction || pred.prediction || 0);
       const salesPrice = pred.price || 0;
       const purchasePrice = pred.purchase_price || 0;
       const expectedRevenue = demand * salesPrice;
-      const expectedProfit = expectedRevenue - (demand * purchasePrice);
+      const expectedCost = demand * purchasePrice;
+      const expectedProfit = expectedRevenue - expectedCost;
+      
+      const recommendedOrder = pred.recommended_order || 0;
+      const orderCostValue = recommendedOrder * purchasePrice;
+
+      totalSoldSum += demand;
+      totalCostSum += expectedCost;
+      totalRevenueSum += expectedRevenue;
+      totalProfitSum += expectedProfit;
+      totalOrderQtySum += recommendedOrder;
+      totalOrderCostSum += orderCostValue;
 
       rows.push([
         pred.group || 'II',
@@ -514,12 +574,33 @@ const BulkPrediction = () => {
         pred.category || 'N/A',
         pred.current_stock || 0,
         purchasePrice.toFixed(2),
+        expectedCost.toFixed(2),
         expectedRevenue.toFixed(2),
+        recommendedOrder,
+        orderCostValue.toFixed(2),
         expectedProfit.toFixed(2),
         pred.trend || 'stable',
         `${((pred.growth_rate || 0) * 100).toFixed(1)}%`
       ]);
     });
+
+    rows.push([
+      'TOTAL',
+      'All Products Summary',
+      totalSoldSum,
+      '',
+      '',
+      '',
+      '',
+      '',
+      totalCostSum.toFixed(2),
+      totalRevenueSum.toFixed(2),
+      totalOrderQtySum,
+      totalOrderCostSum.toFixed(2),
+      totalProfitSum.toFixed(2),
+      '',
+      ''
+    ]);
 
     const csv = rows.map(row => 
       row.map(cell => {

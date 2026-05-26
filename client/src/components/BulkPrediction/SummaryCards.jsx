@@ -27,10 +27,10 @@ const SummaryCards = ({ summary, loading }) => {
         <div className="card-icon">📦</div>
         <div className="card-content">
           <div className="card-label">Total Items</div>
-          <div className="card-value">{summary.totalItems}</div>
+          <div className="card-value">{summary.totalItems.toLocaleString('en-IN')}</div>
           <div className="card-detail">
-            <span className="critical-badge">{summary.criticalItems} Critical</span>
-            <span className="low-badge">{summary.lowStockItems} Low</span>
+            <span className="critical-badge">{summary.criticalItems.toLocaleString('en-IN')} Critical</span>
+            <span className="low-badge">{summary.lowStockItems.toLocaleString('en-IN')} Low</span>
           </div>
         </div>
       </div>
@@ -39,9 +39,9 @@ const SummaryCards = ({ summary, loading }) => {
         <div className="card-icon">📊</div>
         <div className="card-content">
           <div className="card-label">Total Demand</div>
-          <div className="card-value">{summary.totalDemand.toLocaleString()}</div>
+          <div className="card-value">{summary.totalDemand.toLocaleString('en-IN')}</div>
           <div className="card-detail">
-            Current Stock: {summary.totalStock.toLocaleString()}
+            Current Stock: {summary.totalStock.toLocaleString('en-IN')}
           </div>
         </div>
       </div>
@@ -50,11 +50,11 @@ const SummaryCards = ({ summary, loading }) => {
         <div className="card-icon">📈</div>
         <div className="card-content">
           <div className="card-label">Trends</div>
-          <div className="card-value">{summary.increasingTrend}</div>
+          <div className="card-value">{summary.increasingTrend.toLocaleString('en-IN')}</div>
           <div className="card-detail">
-            <span>↗️ {summary.increasingTrend}</span>
-            <span>➡️ {summary.stableTrend}</span>
-            <span>↘️ {summary.decreasingTrend}</span>
+            <span>↗️ {summary.increasingTrend.toLocaleString('en-IN')}</span>
+            <span>➡️ {summary.stableTrend.toLocaleString('en-IN')}</span>
+            <span>↘️ {summary.decreasingTrend.toLocaleString('en-IN')}</span>
           </div>
         </div>
       </div>
@@ -63,7 +63,7 @@ const SummaryCards = ({ summary, loading }) => {
         <div className="card-icon">💰</div>
         <div className="card-content">
           <div className="card-label">Total Order Value</div>
-          <div className="card-value">₹{summary.totalOrderValue.toLocaleString()}</div>
+          <div className="card-value">₹{summary.totalOrderValue.toLocaleString('en-IN')}</div>
           <div className="card-detail">
             Recommended procurement budget
           </div>
