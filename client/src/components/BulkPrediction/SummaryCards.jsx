@@ -50,7 +50,7 @@ const SummaryCards = ({ summary, loading }) => {
         <div className="card-icon">📈</div>
         <div className="card-content">
           <div className="card-label">Trends</div>
-          <div className="card-value">{summary.increasingTrend.toLocaleString('en-IN')}</div>
+          <div className="card-value">{(summary.increasingTrend + summary.stableTrend + summary.decreasingTrend).toLocaleString('en-IN')}</div>
           <div className="card-detail">
             <span>↗️ {summary.increasingTrend.toLocaleString('en-IN')}</span>
             <span>➡️ {summary.stableTrend.toLocaleString('en-IN')}</span>

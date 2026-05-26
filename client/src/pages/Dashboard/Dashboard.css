@@ -59,7 +59,7 @@
 .stat-value.critical { color: #ef4444; }
 .stat-trend { font-size: .75rem; color: #64748b; }
 .stat-trend.trend-up { color: #10b981; }
-.stat-trend.trend-down { color: #3b82f6; }
+.stat-trend.trend-down { color: #e02121e4; }
 
 /* ── Dashboard Tabs ── */
 .dashboard-tabs {
