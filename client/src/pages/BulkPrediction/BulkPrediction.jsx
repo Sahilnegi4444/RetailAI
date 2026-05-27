@@ -553,10 +553,10 @@ const BulkPrediction = () => {
       'Predicted Demand Value (₹)',
       'Order Qty',
       'Order Cost (₹)',
-      'Potential Profit (₹)',
-      'Trend'
+      'Potential Profit (₹)'
     ];
     if (!isBulkOrder) {
+      headers.push('Trend');
       headers.push('Growth Rate');
     }
     rows.push(headers);
@@ -599,10 +599,10 @@ const BulkPrediction = () => {
         expectedRevenue.toFixed(2),
         recommendedOrder,
         orderCostValue.toFixed(2),
-        expectedProfit.toFixed(2),
-        pred.trend || 'stable'
+        expectedProfit.toFixed(2)
       ];
       if (!isBulkOrder) {
+        row.push(pred.trend || 'stable');
         row.push(`${((pred.growth_rate || 0) * 100).toFixed(1)}%`);
       }
       rows.push(row);
@@ -621,10 +621,10 @@ const BulkPrediction = () => {
       totalRevenueSum.toFixed(2),
       totalOrderQtySum,
       totalOrderCostSum.toFixed(2),
-      totalProfitSum.toFixed(2),
-      ''
+      totalProfitSum.toFixed(2)
     ];
     if (!isBulkOrder) {
+      totalRow.push('');
       totalRow.push('');
     }
     rows.push(totalRow);
