@@ -14,9 +14,7 @@ import {
 import './BulkPrediction.css';
 
 const getApiBase = () => {
-  const devPorts = ['5173', '5174', '3000'];
-  const isLocalDev = window.location.hostname === 'localhost' && devPorts.includes(window.location.port);
-  return isLocalDev ? 'http://localhost:8002' : '/api';
+  return window.location.port === '5016' ? '/api' : 'http://localhost:8002';
 };
 
 // Initial state

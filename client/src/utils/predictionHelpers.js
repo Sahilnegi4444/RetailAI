@@ -93,7 +93,7 @@ export const processPrediction = (prediction, targetMonth = null) => {
   
   // Backend returns 'prediction', frontend uses 'final_prediction'
   const finalPrediction = safeNumber(prediction.final_prediction || prediction.prediction);
-  const currentStock = safeNumber(prediction.current_stock);
+  const currentStock = safeNumber(prediction.current_stock !== undefined ? prediction.current_stock : (prediction.stock !== undefined ? prediction.stock : 0));
   const confidence = prediction.confidence || 0.8;
   const growthRate = safeNumber(prediction.growth_rate);
   const trend = prediction.trend || prediction.statistics?.trend || 'stable';

@@ -461,8 +461,13 @@ class DemandForecaster:
             historical = historical_dict.get(item_name, {})
             last_3 = last_3_dict.get(item_name, [])
             
-            # Simulated stock and recommended order for the target month
-            closing_stock = float(step_start_stocks[i])
+            # Real actual stock and recommended order for the target month
+            actual_current_stock = last_known_cs.get(item_name)
+            if actual_current_stock is None or pd.isna(actual_current_stock):
+                actual_current_stock = last_known_ob.get(item_name, 0.0)
+            if pd.isna(actual_current_stock):
+                actual_current_stock = 0.0
+
             stock_known = item_name in stock_known_set
             prediction = float(preds[i])
 
@@ -482,7 +487,7 @@ class DemandForecaster:
                 'method': 'xgboost_recursive',
                 'price': float(row['R_Rate']) if pd.notna(row['R_Rate']) else 0,
                 'purchase_price': float(row['W_Rate']) if pd.notna(row['W_Rate']) else 0,
-                'current_stock': int(closing_stock),
+                'current_stock': int(round(actual_current_stock)),
                 'stock_data_available': stock_known,
                 'recommended_order': recommended_order,
                 'trend': trend,
