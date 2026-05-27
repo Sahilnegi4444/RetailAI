@@ -1044,33 +1044,40 @@ def _run_retraining_task(triggered_by: str = "manual"):
         df_raw['Item_ID'] = df_raw['GP_Index_No'].apply(clean_id_part) + "_" + df_raw['pluno'].apply(clean_id_part)
         df_raw['Category'] = df_raw['_category']
 
-        # Extract and Map Group column before aggregation
-        def extract_group_prefix(gp):
-            if pd.isna(gp): return None
-            import re
-            m = re.match(r'^([IVX]+)/', str(gp))
-            return m.group(1) if m else None
+        # Extract and Map Group column before aggregation (preserve existing Group if present)
+        has_valid_groups = False
+        if 'Group' in df_raw.columns:
+            unique_grps = [str(g).strip() for g in df_raw['Group'].dropna().unique() if str(g).strip() not in ['', 'None']]
+            if len(unique_grps) > 0:
+                has_valid_groups = True
 
-        df_raw['Extracted_Group'] = df_raw['GP_Index_No'].apply(extract_group_prefix)
-        
-        def map_group(row):
-            orig = row['Extracted_Group']
-            cat = str(row['_category']).lower()
-            if 'liquor' in cat:
-                return 'VI'
-            if not orig:
-                return 'II'
-            mapping = {
-                'I': 'I',
-                'II': 'II',
-                'III': 'III',
-                'IV': 'IV',
-                'V': 'V',
-                'VI': 'V',
-            }
-            return mapping.get(orig, 'V')
-                
-        df_raw['Group'] = df_raw.apply(map_group, axis=1)
+        if not has_valid_groups:
+            def extract_group_prefix(gp):
+                if pd.isna(gp): return None
+                import re
+                m = re.match(r'^([IVX]+)/', str(gp))
+                return m.group(1) if m else None
+
+            df_raw['Extracted_Group'] = df_raw['GP_Index_No'].apply(extract_group_prefix)
+            
+            def map_group(row):
+                orig = row['Extracted_Group']
+                cat = str(row['_category']).lower()
+                if 'liquor' in cat:
+                    return 'VI'
+                if not orig:
+                    return 'II'
+                mapping = {
+                    'I': 'I',
+                    'II': 'II',
+                    'III': 'III',
+                    'IV': 'IV',
+                    'V': 'V',
+                    'VI': 'V',
+                }
+                return mapping.get(orig, 'V')
+                    
+            df_raw['Group'] = df_raw.apply(map_group, axis=1)
 
         # Aggregation of duplicates (NOTE: Profit intentionally excluded)
         agg_funcs = {
