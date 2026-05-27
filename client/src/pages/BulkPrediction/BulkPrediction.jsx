@@ -357,6 +357,26 @@ const BulkPrediction = () => {
   }, []);
 
   const handleDateChange = useCallback((date) => {
+    if (!date) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+    const selected = new Date(date);
+    const selectedYear = selected.getFullYear();
+
+    if (selectedYear < currentYear) {
+      alert("Prediction is not possible for previous dates. Showing historical records instead.");
+      dispatch({ type: 'SET_PREDICTION_DATE', payload: date });
+      return;
+    }
+
+    const oneYearFromToday = new Date(today);
+    oneYearFromToday.setFullYear(today.getFullYear() + 1);
+    if (selected > oneYearFromToday) {
+      alert("Prediction more than 1 year in the future is not allowed.");
+      return;
+    }
+
     dispatch({ type: 'SET_PREDICTION_DATE', payload: date });
   }, []);
 
@@ -396,6 +416,10 @@ const BulkPrediction = () => {
 
   const handlePredictFutureAggregate = useCallback(async () => {
     if (state.predictionLoading) return;
+    if (state.selectedMonths < 1 || state.selectedMonths > 12) {
+      alert("Prediction more than 1 year (12 months) is not allowed.");
+      return;
+    }
     dispatch({ type: 'SET_PREDICTION_LOADING', payload: true });
     
     const controller = new AbortController();
@@ -706,13 +730,27 @@ const BulkPrediction = () => {
                   min="1"
                   max="12"
                   value={state.selectedMonths}
-                  onChange={(e) => dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.min(12, Math.max(1, parseInt(e.target.value) || 1)) })}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 1;
+                    if (val > 12) {
+                      alert("Prediction more than 1 year (12 months) is not allowed.");
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 12 });
+                    } else {
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.max(1, val) });
+                    }
+                  }}
                   className="month-input"
                   disabled={state.predictionLoading}
                 />
                 <button 
                   className="spinner-btn"
-                  onClick={() => dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.min(12, state.selectedMonths + 1) })}
+                  onClick={() => {
+                    if (state.selectedMonths >= 12) {
+                      alert("Prediction more than 1 year (12 months) is not allowed.");
+                    } else {
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: state.selectedMonths + 1 });
+                    }
+                  }}
                   disabled={state.predictionLoading}
                 >+
                 </button>

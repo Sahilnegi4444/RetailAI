@@ -34,9 +34,48 @@ const BudgetAllocator = () => {
   const [originalResult, setOriginalResult] = useState(null);
   const [error, setError] = useState(null);
 
+  const validateAndSetPeriod = (m, y) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+    const selectedDate = new Date(y, m - 1, 1);
+
+    if (y < currentYear) {
+      alert("Prediction is not possible for previous dates. Showing historical records instead.");
+      setYear(y);
+      setMonth(m);
+      return true;
+    }
+
+    const oneYearFromToday = new Date(today);
+    oneYearFromToday.setFullYear(today.getFullYear() + 1);
+    
+    if (selectedDate > oneYearFromToday) {
+      alert("Prediction more than 1 year in the future is not allowed.");
+      return false;
+    }
+
+    setYear(y);
+    setMonth(m);
+    return true;
+  };
+
   const allocate = async () => {
     const b = parseFloat(budget.replace(/,/g, ""));
     if (!b || b <= 0) { setError("Enter a valid budget amount"); return; }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+    const selectedDate = new Date(year, month - 1, 1);
+    const oneYearFromToday = new Date(today);
+    oneYearFromToday.setFullYear(today.getFullYear() + 1);
+    
+    if (selectedDate > oneYearFromToday) {
+      alert("Prediction more than 1 year in the future is not allowed.");
+      return;
+    }
+
     setLoading(true); setError(null);
     try {
       const res = await fetch(`${API()}/budget/allocate`, {
@@ -233,15 +272,17 @@ const BudgetAllocator = () => {
           </div>
           <div className="budget-field">
             <label>Target Month</label>
-            <select className="budget-select" value={month} onChange={e => setMonth(parseInt(e.target.value))}>
+            <select className="budget-select" value={month} onChange={e => validateAndSetPeriod(parseInt(e.target.value), year)}>
               {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
             </select>
           </div>
           <div className="budget-field">
             <label>Year</label>
-            <select className="budget-select" value={year} onChange={e => setYear(parseInt(e.target.value))}>
+            <select className="budget-select" value={year} onChange={e => validateAndSetPeriod(month, parseInt(e.target.value))}>
               <option value={2025}>2025</option>
               <option value={2026}>2026</option>
+              <option value={2027}>2027</option>
+              <option value={2028}>2028</option>
             </select>
           </div>
           <button className="allocate-btn" onClick={allocate} disabled={loading || !budget}>

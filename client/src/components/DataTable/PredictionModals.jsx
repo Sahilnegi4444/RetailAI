@@ -6,7 +6,56 @@ export const PredictPreviousYearsModal = ({ isOpen, onClose, onSubmit, isLoading
 
   if (!isOpen) return null;
 
+  const handleDateChange = (date) => {
+    if (!date) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+    const selected = new Date(date);
+    const selectedYear = selected.getFullYear();
+
+    if (selectedYear < currentYear) {
+      alert("Prediction is not possible for previous dates. Showing historical records instead.");
+      setSelectedDate(date);
+      return;
+    }
+
+    const oneYearFromToday = new Date(today);
+    oneYearFromToday.setFullYear(today.getFullYear() + 1);
+    if (selected > oneYearFromToday) {
+      alert("Prediction more than 1 year in the future is not allowed.");
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+      return;
+    }
+
+    setSelectedDate(date);
+  };
+
   const handleSubmit = () => {
+    if (!selectedDate) {
+      alert("Please select a date.");
+      return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+    const selected = new Date(selectedDate);
+    const selectedYear = selected.getFullYear();
+
+    if (selectedYear < currentYear) {
+      alert("Prediction is not possible for previous dates. Showing historical records instead.");
+      onSubmit({ type: 'previous_years', date: selectedDate });
+      onClose();
+      return;
+    }
+
+    const oneYearFromToday = new Date(today);
+    oneYearFromToday.setFullYear(today.getFullYear() + 1);
+    if (selected > oneYearFromToday) {
+      alert("Prediction more than 1 year in the future is not allowed.");
+      return;
+    }
+
     onSubmit({ type: 'previous_years', date: selectedDate });
     onClose();
   };
@@ -29,7 +78,7 @@ export const PredictPreviousYearsModal = ({ isOpen, onClose, onSubmit, isLoading
             <input
               type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e) => handleDateChange(e.target.value)}
               className="form-input"
             />
             <small className="help-text">
@@ -70,8 +119,8 @@ export const PredictLastNMonthsModal = ({ isOpen, onClose, onSubmit, isLoading }
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    if (months < 1 || months > 24) {
-      alert('Please enter a number between 1 and 24');
+    if (months < 1 || months > 12) {
+      alert('Prediction more than 1 year (12 months) is not allowed.');
       return;
     }
     onSubmit({ type: 'last_n_months', months: parseInt(months) });
@@ -103,20 +152,34 @@ export const PredictLastNMonthsModal = ({ isOpen, onClose, onSubmit, isLoading }
               <input
                 type="number"
                 min="1"
-                max="24"
+                max="12"
                 value={months}
-                onChange={(e) => setMonths(Math.max(1, Math.min(24, parseInt(e.target.value) || 1)))}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value) || 1;
+                  if (val > 12) {
+                    alert("Prediction more than 1 year (12 months) is not allowed.");
+                    setMonths(12);
+                  } else {
+                    setMonths(Math.max(1, val));
+                  }
+                }}
                 className="form-input-number"
               />
               <button
                 className="btn-spinner"
-                onClick={() => setMonths(Math.min(24, months + 1))}
+                onClick={() => {
+                  if (months >= 12) {
+                    alert("Prediction more than 1 year (12 months) is not allowed.");
+                  } else {
+                    setMonths(months + 1);
+                  }
+                }}
               >
                 +
               </button>
             </div>
             <small className="help-text">
-              Recommended: 3-6 months for seasonal patterns, 12+ months for annual trends
+              Recommended: 3-6 months for seasonal patterns, 12 months for annual trends (max 1 year)
             </small>
           </div>
 

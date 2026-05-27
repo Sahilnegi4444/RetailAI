@@ -48,6 +48,37 @@ def _normalize_month_num(val) -> int:
     # Try month name lookup
     return _MONTH_NAME_TO_NUM.get(s.lower(), 0)
 
+def validate_prediction_date(date_str: str):
+    """
+    Validate that the target prediction date is not more than 1 year in the future.
+    Previous dates are allowed and will serve historical records.
+    """
+    if not date_str:
+        return
+    try:
+        target_date = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {date_str}")
+        
+    current_time = datetime.now()
+    
+    # 1. More than 1 year in the future check
+    try:
+        one_year_later = current_time.replace(year=current_time.year + 1)
+    except ValueError:
+        # Handle Feb 29 leap year case
+        one_year_later = current_time.replace(year=current_time.year + 1, day=28)
+        
+    if target_date > one_year_later:
+        raise HTTPException(status_code=400, detail="Prediction more than 1 year in the future is not allowed.")
+
+def validate_prediction_months(n_months: int):
+    """
+    Validate that the forecast period is not more than 12 months (1 year).
+    """
+    if n_months is not None and n_months > 12:
+        raise HTTPException(status_code=400, detail="Prediction more than 1 year (12 months) is not allowed.")
+
 # ============================================================
 # App Setup
 # ============================================================
@@ -254,6 +285,7 @@ def predict(request: PredictRequest):
     """
     _require_ready()
     date_str = request.prediction_date or datetime.now().strftime("%Y-%m-%d")
+    validate_prediction_date(date_str)
 
     try:
         target_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -281,6 +313,8 @@ def predict_future_aggregate(request: FutureAggregateRequest):
     _require_ready()
     date_str = request.prediction_date or datetime.now().strftime("%Y-%m-%d")
     n = request.n_months or 3
+    validate_prediction_date(date_str)
+    validate_prediction_months(n)
     
     print(f"[API] Generating {n}-month aggregate forecast starting {date_str}...")
     predictions = forecaster.predict_future_aggregate(date_str, n)
@@ -310,6 +344,7 @@ def predict_paginated(
     """
     _require_ready()
     date_str = request.prediction_date or datetime.now().strftime("%Y-%m-%d")
+    validate_prediction_date(date_str)
 
     try:
         target_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -527,6 +562,7 @@ def export_csv(
     """
     _require_ready()
     date_str = prediction_date or datetime.now().strftime("%Y-%m-%d")
+    validate_prediction_date(date_str)
     try:
         target_date = datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
@@ -670,6 +706,7 @@ def budget_predict(request: BudgetPredictRequest):
     Returns budget-allocated predictions with all features.
     """
     _require_ready()
+    validate_prediction_date(request.prediction_date)
     try:
         target_date = datetime.strptime(request.prediction_date, "%Y-%m-%d")
     except ValueError:
@@ -710,6 +747,8 @@ def predict_previous_years(
         raise HTTPException(status_code=400, detail="No items provided")
     if not request.target_date:
         raise HTTPException(status_code=400, detail="No target_date provided")
+        
+    validate_prediction_date(request.target_date)
 
     # Paginate the item list first, then compute predictions for that page only
     start = (page - 1) * page_size
@@ -738,6 +777,9 @@ def predict_last_n_months(
     _require_ready()
     if not request.items:
         raise HTTPException(status_code=400, detail="No items provided")
+        
+    n = request.n_months or 4
+    validate_prediction_months(n)
 
     start = (page - 1) * page_size
     end = start + page_size
@@ -1787,6 +1829,10 @@ class BudgetRequest(BaseModel):
 def allocate_budget(req: BudgetRequest):
     import numpy as np
     _require_ready()
+    # Validate target date/period limits
+    date_str = f"{req.year}-{req.month:02d}-01"
+    validate_prediction_date(date_str)
+    
     # Filter out null Item_Name rows to avoid corrupted aggregates skewing demand calculations
     df = forecaster.df.copy()
     df = df[df['Item_Name'].notna() & (df['Item_Name'] != '') & (df['Item_Name'] != 'None')]
