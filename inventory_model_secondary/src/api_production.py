@@ -229,12 +229,12 @@ def model_info():
     return {
         "model": "XGBoost Recursive Forecaster",
         "version": "3.0.0",
-        "features": 18,
+        "features": 14,
         "feature_names": [
             'W_Rate', 'R_Rate', 'Margin_Abs', 'Margin_Pct',
-            'Month', 'Year', 'Quarter', 'Time_Index',
-            'Lag_1', 'Lag_2', 'Lag_3', 'Rolling_Mean_3M',
-            'Group_II', 'Group_III', 'Group_IV', 'Group_V', 'Group_VI',
+            'Month', 'Quarter',
+            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_6', 'Lag_12',
+            'Rolling_Mean_3M', 'YoY_Growth',
             'Category_Liquor'
         ],
         "trained_on": f"SQLite master_training_data table ({data_period})",
@@ -568,11 +568,11 @@ def export_csv(
     
     # Define headers to match predictions data exactly
     fieldnames = [
-        'Group', 'Product Name', 'Total Sold', 'Avg Price (₹)',
-        'item_id', 'category', 'current_stock', 'purchase_price', 
+        'Group', 'Product Name', 'Predicted Demand', 'Avg Price (₹)',
+        'Item ID', 'Category', 'Current Stock', 'Purchase Price (₹)', 
         'Demand Cost (₹)', 'Predicted Demand Value (₹)', 
         'Order Qty', 'Order Cost (₹)', 'Potential Profit (₹)',
-        'trend', 'growth_rate'
+        'Trend', 'Growth Rate'
     ]
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
@@ -609,19 +609,19 @@ def export_csv(
         row = {
             'Group': p.get('group', 'II'),
             'Product Name': p.get('item_name'),
-            'Total Sold': rounded_demand,
+            'Predicted Demand': rounded_demand,
             'Avg Price (₹)': round(sales_price, 2),
-            'item_id': p.get('item_id'),
-            'category': p.get('category'),
-            'current_stock': p.get('current_stock', 0),
-            'purchase_price': round(purchase_price, 2),
+            'Item ID': p.get('item_id'),
+            'Category': p.get('category'),
+            'Current Stock': p.get('current_stock', 0),
+            'Purchase Price (₹)': round(purchase_price, 2),
             'Demand Cost (₹)': round(expected_cost, 2),
             'Predicted Demand Value (₹)': round(expected_revenue, 2),
             'Order Qty': recommended_order,
             'Order Cost (₹)': round(order_cost, 2),
             'Potential Profit (₹)': round(expected_profit, 2),
-            'trend': p.get('trend', 'stable'),
-            'growth_rate': f"{p.get('growth_rate', 0)*100:.1f}%"
+            'Trend': p.get('trend', 'stable'),
+            'Growth Rate': f"{p.get('growth_rate', 0)*100:+.1f}%" if p.get('growth_rate', 0) != 0 else "0.0%"
         }
         writer.writerow(row)
         
@@ -629,19 +629,19 @@ def export_csv(
     writer.writerow({
         'Group': 'TOTAL',
         'Product Name': 'All Products Summary',
-        'Total Sold': total_sold_sum,
+        'Predicted Demand': total_sold_sum,
         'Avg Price (₹)': '',
-        'item_id': '',
-        'category': '',
-        'current_stock': '',
-        'purchase_price': '',
+        'Item ID': '',
+        'Category': '',
+        'Current Stock': '',
+        'Purchase Price (₹)': '',
         'Demand Cost (₹)': round(total_cost_sum, 2),
         'Predicted Demand Value (₹)': round(total_revenue_sum, 2),
         'Order Qty': total_order_qty_sum,
         'Order Cost (₹)': round(total_order_cost_sum, 2),
         'Potential Profit (₹)': round(total_profit_sum, 2),
-        'trend': '',
-        'growth_rate': ''
+        'Trend': '',
+        'Growth Rate': ''
     })
     
     output.seek(0)
@@ -1105,10 +1105,16 @@ def _run_retraining_task(triggered_by: str = "manual"):
         df_full['Lag_1'] = df_full.groupby('Item_ID')['Net_Qty'].shift(1)
         df_full['Lag_2'] = df_full.groupby('Item_ID')['Net_Qty'].shift(2)
         df_full['Lag_3'] = df_full.groupby('Item_ID')['Net_Qty'].shift(3)
+        df_full['Lag_6'] = df_full.groupby('Item_ID')['Net_Qty'].shift(6)
+        df_full['Lag_12'] = df_full.groupby('Item_ID')['Net_Qty'].shift(12)
 
         df_full['Rolling_Mean_3M'] = df_full.groupby('Item_ID')['Net_Qty'].transform(
             lambda x: x.shift(1).rolling(window=3, min_periods=1).mean()
         )
+
+        # Year-over-Year growth rate: measures genuine growth vs seasonal baseline
+        df_full['YoY_Growth'] = (df_full['Lag_1'] - df_full['Lag_12']) / (df_full['Lag_12'].abs() + 1)
+        df_full['YoY_Growth'] = df_full['YoY_Growth'].fillna(0).clip(-5, 5)
 
         df_full['Date'] = df_full['Date'].dt.strftime('%Y-%m-%d')
 
@@ -1120,11 +1126,17 @@ def _run_retraining_task(triggered_by: str = "manual"):
         # Step 3: XGBoost Training
         global_training_status.update({"progress": 70, "message": "Step 3/4: Fitting native XGBoost Demand Model..."})
         
+        # Prepare training set: drop cold-start rows (where Lag_1 is NaN) and fill remaining NaNs with 0
+        df_train = df_full.dropna(subset=['Lag_1']).copy()
+        for col in ['Lag_2', 'Lag_3', 'Lag_6', 'Lag_12', 'Rolling_Mean_3M', 'YoY_Growth']:
+            if col in df_train.columns:
+                df_train[col] = df_train[col].fillna(0)
+
         MODEL_FEATURES = [
             'W_Rate', 'R_Rate', 'Margin_Abs', 'Margin_Pct',
-            'Month', 'Year', 'Quarter', 'Time_Index',
-            'Lag_1', 'Lag_2', 'Lag_3', 'Rolling_Mean_3M',
-            'Group_II', 'Group_III', 'Group_IV', 'Group_V', 'Group_VI',
+            'Month', 'Quarter',
+            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_6', 'Lag_12',
+            'Rolling_Mean_3M', 'YoY_Growth',
             'Category_Liquor'
         ]
 
@@ -1134,8 +1146,8 @@ def _run_retraining_task(triggered_by: str = "manual"):
             'O_B', 'Closing_Stock', 'Net_Tax', 'Net_Qty'
         ]
 
-        y = df_full['Net_Qty']
-        X = df_full.drop(columns=cols_to_drop, errors='ignore')
+        y = df_train['Net_Qty']
+        X = df_train.drop(columns=cols_to_drop, errors='ignore')
 
         # OHE Group and Category
         X = pd.get_dummies(X, columns=['Group', 'Category'], drop_first=True)
@@ -1143,11 +1155,15 @@ def _run_retraining_task(triggered_by: str = "manual"):
 
         # Train model
         model = xgb.XGBRegressor(
-            n_estimators=300,
-            learning_rate=0.05,
-            max_depth=5,
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=7,
             subsample=0.8,
             colsample_bytree=0.8,
+            min_child_weight=5,
+            gamma=0.1,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
             objective='reg:squarederror',
             random_state=42,
             n_jobs=-1
