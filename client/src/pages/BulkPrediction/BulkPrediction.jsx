@@ -357,26 +357,23 @@ const BulkPrediction = () => {
   }, []);
 
   const handleDateChange = useCallback((date) => {
-    if (!date) return;
+    const selectedDate = new Date(date);
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const currentYear = today.getFullYear();
-    const selected = new Date(date);
-    const selectedYear = selected.getFullYear();
-
-    if (selectedYear < currentYear) {
-      alert("Prediction is not possible for previous dates. Showing historical records instead.");
-      dispatch({ type: 'SET_PREDICTION_DATE', payload: date });
+    
+    const diffMonths = (selectedDate.getFullYear() - today.getFullYear()) * 12 + (selectedDate.getMonth() - today.getMonth());
+    
+    if (diffMonths > 10) {
+      alert("only 10 monehts of prediction can be predicted.");
       return;
     }
-
-    const oneYearFromToday = new Date(today);
-    oneYearFromToday.setFullYear(today.getFullYear() + 1);
-    if (selected > oneYearFromToday) {
-      alert("Prediction more than 1 year in the future is not allowed.");
-      return;
+    
+    if (diffMonths < 0) {
+      const confirmProceed = window.confirm("you are viewing the old results form the database");
+      if (!confirmProceed) {
+        return;
+      }
     }
-
+    
     dispatch({ type: 'SET_PREDICTION_DATE', payload: date });
   }, []);
 
@@ -416,10 +413,6 @@ const BulkPrediction = () => {
 
   const handlePredictFutureAggregate = useCallback(async () => {
     if (state.predictionLoading) return;
-    if (state.selectedMonths < 1 || state.selectedMonths > 12) {
-      alert("Prediction more than 1 year (12 months) is not allowed.");
-      return;
-    }
     dispatch({ type: 'SET_PREDICTION_LOADING', payload: true });
     
     const controller = new AbortController();
@@ -544,24 +537,28 @@ const BulkPrediction = () => {
     const rows = [];
     rows.push(['--- Product Details ---']);
     
+    const isBulkOrder = state.predictionMode === 'bulk_order';
+
     // Define headers to match predictions data exactly
     const headers = [
       'Group',
       'Product Name', 
-      'Total Sold', 
+      'Predicted Demand', 
       'Avg Price (₹)',
-      'item_id',
-      'category',
-      'current_stock', 
-      'purchase_price', 
+      'Item ID',
+      'Category',
+      'Current Stock', 
+      'Purchase Price (₹)', 
       'Demand Cost (₹)',
       'Predicted Demand Value (₹)',
       'Order Qty',
       'Order Cost (₹)',
       'Potential Profit (₹)',
-      'trend',
-      'growth_rate'
+      'Trend'
     ];
+    if (!isBulkOrder) {
+      headers.push('Growth Rate');
+    }
     rows.push(headers);
     
     let totalSoldSum = 0;
@@ -589,7 +586,7 @@ const BulkPrediction = () => {
       totalOrderQtySum += recommendedOrder;
       totalOrderCostSum += orderCostValue;
 
-      rows.push([
+      const row = [
         pred.group || 'II',
         pred.item_name,
         demand,
@@ -603,12 +600,15 @@ const BulkPrediction = () => {
         recommendedOrder,
         orderCostValue.toFixed(2),
         expectedProfit.toFixed(2),
-        pred.trend || 'stable',
-        `${((pred.growth_rate || 0) * 100).toFixed(1)}%`
-      ]);
+        pred.trend || 'stable'
+      ];
+      if (!isBulkOrder) {
+        row.push(`${((pred.growth_rate || 0) * 100).toFixed(1)}%`);
+      }
+      rows.push(row);
     });
 
-    rows.push([
+    const totalRow = [
       'TOTAL',
       'All Products Summary',
       totalSoldSum,
@@ -622,9 +622,12 @@ const BulkPrediction = () => {
       totalOrderQtySum,
       totalOrderCostSum.toFixed(2),
       totalProfitSum.toFixed(2),
-      '',
       ''
-    ]);
+    ];
+    if (!isBulkOrder) {
+      totalRow.push('');
+    }
+    rows.push(totalRow);
 
     const csv = rows.map(row => 
       row.map(cell => {
@@ -728,13 +731,13 @@ const BulkPrediction = () => {
                   id="months-count"
                   type="number"
                   min="1"
-                  max="12"
+                  max="10"
                   value={state.selectedMonths}
                   onChange={(e) => {
                     const val = parseInt(e.target.value) || 1;
-                    if (val > 12) {
-                      alert("Prediction more than 1 year (12 months) is not allowed.");
-                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 12 });
+                    if (val > 10) {
+                      alert("only 10 monehts of prediction can be predicted.");
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 10 });
                     } else {
                       dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.max(1, val) });
                     }
@@ -745,10 +748,12 @@ const BulkPrediction = () => {
                 <button 
                   className="spinner-btn"
                   onClick={() => {
-                    if (state.selectedMonths >= 12) {
-                      alert("Prediction more than 1 year (12 months) is not allowed.");
+                    const nextVal = state.selectedMonths + 1;
+                    if (nextVal > 10) {
+                      alert("only 10 monehts of prediction can be predicted.");
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 10 });
                     } else {
-                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: state.selectedMonths + 1 });
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: nextVal });
                     }
                   }}
                   disabled={state.predictionLoading}

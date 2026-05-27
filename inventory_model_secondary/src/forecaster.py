@@ -18,12 +18,11 @@ import os
 from pathlib import Path
 from functools import lru_cache
 
-# The exact feature names the model was trained on (order matters for XGBoost)
 MODEL_FEATURES = [
     'W_Rate', 'R_Rate', 'Margin_Abs', 'Margin_Pct',
-    'Month', 'Year', 'Quarter', 'Time_Index',
-    'Lag_1', 'Lag_2', 'Lag_3', 'Rolling_Mean_3M',
-    'Group_II', 'Group_III', 'Group_IV', 'Group_V', 'Group_VI',
+    'Month', 'Quarter',
+    'Lag_1', 'Lag_2', 'Lag_3', 'Lag_6', 'Lag_12',
+    'Rolling_Mean_3M', 'YoY_Growth',
     'Category_Liquor'
 ]
 
@@ -315,12 +314,15 @@ class DemandForecaster:
 
         # Recursive forecast for each step
         current_df = last_state.copy()
-        max_time_index = int(self.df['Time_Index'].max())
 
-        # FIX: Seed the lag features with the actual last-month sales before
-        # starting recursive forecasting. The last row's Lag_1 is the previous
-        # month's actual value, not the last month itself. We need to shift once
-        # to incorporate the last known month's actual Net_Qty into Lag_1.
+        # Fast lookup mapping: (Item_Name, Year, Month) -> Net_Qty
+        grouped_sales = self.df.groupby(['Item_Name', 'Year', 'Month'])['Net_Qty'].sum().reset_index()
+        lag_12_lookup = {
+            (r.Item_Name, int(r.Year), int(r.Month)): float(r.Net_Qty)
+            for r in grouped_sales.itertuples(index=False)
+        }
+
+        # Seed the lag features with actual last-month sales
         current_df['Lag_3'] = current_df['Lag_2']
         current_df['Lag_2'] = current_df['Lag_1']
         current_df['Lag_1'] = current_df['Net_Qty'].fillna(0)
@@ -328,19 +330,110 @@ class DemandForecaster:
             current_df['Lag_1'] + current_df['Lag_2'] + current_df['Lag_3']
         ) / 3
 
+        # Track recursive predictions for Lag_6 computation
+        # pred_history[step_offset] = predictions_array (1-indexed offset from last_date)
+        pred_history = {}
+        # Seed with known actual months for Lag_6 lookups during early steps
+        for back_step in range(1, 7):
+            back_date = pd.Timestamp(year=last_year, month=last_month, day=1) - pd.DateOffset(months=back_step - 1)
+            bm, by = back_date.month, back_date.year
+            pred_history[-back_step + 1] = current_df['Item_Name'].apply(
+                lambda name: lag_12_lookup.get((name, by, bm), 0.0)
+            ).values
+
+        # Initialize simulated stock levels for all items
+        sorted_df = self.df.sort_values(['Item_Name', 'Date'])
+        last_valid_cs_rows = sorted_df[sorted_df['Closing_Stock'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
+        last_known_cs = last_valid_cs_rows['Closing_Stock'].to_dict()
+        last_valid_ob_rows = sorted_df[sorted_df['O_B'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
+        last_known_ob = last_valid_ob_rows['O_B'].to_dict()
+
+        stock_dict = {}
+        stock_known_set = set()
+
+        for item_name in current_df['Item_Name'].unique():
+            cs = last_known_cs.get(item_name)
+            if cs is not None and not pd.isna(cs):
+                stock_dict[item_name] = float(cs)
+                stock_known_set.add(item_name)
+            else:
+                ob = last_known_ob.get(item_name)
+                if ob is not None and not pd.isna(ob):
+                    stock_dict[item_name] = float(ob)
+                    stock_known_set.add(item_name)
+                else:
+                    stock_dict[item_name] = 0.0
+
+        # Arrays to hold the target month's start stock and recommended orders
+        step_rec_orders = []
+        step_start_stocks = []
+
         for step in range(1, steps_ahead + 1):
             forecast_date = pd.Timestamp(year=last_year, month=last_month, day=1) + pd.DateOffset(months=step)
             m = forecast_date.month
             y = forecast_date.year
 
             current_df['Month'] = m
-            current_df['Year'] = y
             current_df['Quarter'] = (m - 1) // 3 + 1
-            current_df['Time_Index'] = max_time_index + step
+
+            # Dynamic lookup for Lag_12 (exactly 12 months ago — always actual data)
+            current_df['Lag_12'] = current_df['Item_Name'].apply(
+                lambda name: lag_12_lookup.get((name, y - 1, m), 0.0)
+            )
+
+            # Dynamic lookup for Lag_6 (6 months ago — may be actual or predicted)
+            lag6_step = step - 6
+            if lag6_step in pred_history:
+                current_df['Lag_6'] = pred_history[lag6_step]
+            else:
+                # Lookup from actual data
+                lag6_date = forecast_date - pd.DateOffset(months=6)
+                current_df['Lag_6'] = current_df['Item_Name'].apply(
+                    lambda name: lag_12_lookup.get((name, lag6_date.year, lag6_date.month), 0.0)
+                )
+
+            # Compute YoY_Growth
+            current_df['YoY_Growth'] = ((current_df['Lag_1'] - current_df['Lag_12']) / (current_df['Lag_12'].abs() + 1)).clip(-5, 5).fillna(0)
 
             X = self._encode_features(current_df)
             preds = self.model.predict(X)
             preds = np.clip(preds, 0, None)
+
+            # Demand cap: clamp predictions that exceed 2x their seasonal baseline
+            lag12_vals = current_df['Lag_12'].values
+            rolling_vals = current_df['Rolling_Mean_3M'].values
+            for idx in range(len(preds)):
+                seasonal_base = lag12_vals[idx]
+                if seasonal_base > 2:  # only cap items with meaningful seasonal history
+                    cap = max(seasonal_base * 2.0, rolling_vals[idx] * 1.5)
+                    if preds[idx] > cap:
+                        preds[idx] = cap
+
+            # Simulate stock levels and recommended orders month-by-month
+            # Reset step_rec_orders and step_start_stocks on each step so they reflect the final/target month
+            step_rec_orders = []
+            step_start_stocks = []
+
+            for idx, item_name in enumerate(current_df['Item_Name']):
+                item_pred = preds[idx]
+                item_stock = stock_dict.get(item_name, 0.0)
+                is_known = item_name in stock_known_set
+
+                step_start_stocks.append(item_stock)
+
+                if is_known:
+                    rec_order = max(0.0, item_pred - item_stock)
+                    # Deduct the prediction from stock (simulating sales)
+                    new_stock = max(0.0, item_stock - item_pred)
+                    stock_dict[item_name] = new_stock
+                else:
+                    rec_order = item_pred
+                    stock_dict[item_name] = 0.0
+
+                step_rec_orders.append(rec_order)
+
+            # Store predictions for future Lag_6 lookups
+            pred_history[step] = preds.copy()
 
             # Shift lags for next step
             current_df['Lag_3'] = current_df['Lag_2']
@@ -355,35 +448,6 @@ class DemandForecaster:
         
         # --- PRE-COMPUTATIONS ---
         year_totals_dict, historical_dict, last_3_dict, trend_dict = self._precompute_metrics()
-        sorted_df = self.df.sort_values(['Item_Name', 'Date'])
-
-        # 3. Current Stock — use absolute last known Closing_Stock or O_B from actual uploaded data
-        # Walk backwards to find the last known non-NaN Closing_Stock or O_B in the entire history.
-        # This resolves the issue where items not listed in recent months still have last known stock.
-        
-        # Get absolute last non-NaN Closing_Stock row for each item in the entire dataset
-        last_valid_cs_rows = sorted_df[sorted_df['Closing_Stock'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
-        last_known_cs = last_valid_cs_rows['Closing_Stock'].to_dict()
-
-        # Get absolute last non-NaN O_B row for each item in the entire dataset
-        last_valid_ob_rows = sorted_df[sorted_df['O_B'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
-        last_known_ob = last_valid_ob_rows['O_B'].to_dict()
-
-        closing_stock_dict = {}
-        stock_data_known = set()
-
-        for item_name in sorted_df['Item_Name'].unique():
-            cs = last_known_cs.get(item_name)
-            if cs is not None and not pd.isna(cs):
-                closing_stock_dict[item_name] = float(cs)
-                stock_data_known.add(item_name)
-            else:
-                ob = last_known_ob.get(item_name)
-                if ob is not None and not pd.isna(ob):
-                    closing_stock_dict[item_name] = float(ob)
-                    stock_data_known.add(item_name)
-                else:
-                    closing_stock_dict[item_name] = 0.0
 
         # --- END VECTORIZED PRE-COMPUTATIONS ---
         
@@ -397,19 +461,15 @@ class DemandForecaster:
             historical = historical_dict.get(item_name, {})
             last_3 = last_3_dict.get(item_name, [])
             
-            # Closing stock logic — closing_stock_dict covers all items (built above)
-            closing_stock = float(closing_stock_dict.get(item_name, 0.0))
-            if pd.isna(closing_stock): closing_stock = 0.0
-            stock_known = item_name in stock_data_known
-
+            # Simulated stock and recommended order for the target month
+            closing_stock = float(step_start_stocks[i])
+            stock_known = item_name in stock_known_set
             prediction = float(preds[i])
 
             max_year = int(self.df["Year"].max())
             prev_year = max_year - 1
 
-            # Only recommend an order when we know the stock level;
-            # if stock is unknown we leave recommended_order as the full prediction
-            recommended_order = max(0, int(round(prediction - closing_stock))) if stock_known else int(round(prediction))
+            recommended_order = int(round(step_rec_orders[i]))
 
             results.append({
                 'item_id': str(item_id),
@@ -514,17 +574,57 @@ class DemandForecaster:
         
         # Recursive forecast loop
         current_df = last_state.copy()
-        max_time_index = int(self.df['Time_Index'].max())
+
+        # Fast lookup mapping: (Item_Name, Year, Month) -> Net_Qty
+        grouped_sales = self.df.groupby(['Item_Name', 'Year', 'Month'])['Net_Qty'].sum().reset_index()
+        lag_12_lookup = {
+            (r.Item_Name, int(r.Year), int(r.Month)): float(r.Net_Qty)
+            for r in grouped_sales.itertuples(index=False)
+        }
         
         # Seed lags
         current_df['Lag_3'] = current_df['Lag_2']
         current_df['Lag_2'] = current_df['Lag_1']
         current_df['Lag_1'] = current_df['Net_Qty'].fillna(0)
         current_df['Rolling_Mean_3M'] = (current_df['Lag_1'] + current_df['Lag_2'] + current_df['Lag_3']) / 3
+
+        # Track recursive predictions for Lag_6 computation
+        pred_history = {}
+        for back_step in range(1, 7):
+            back_date = pd.Timestamp(year=last_year, month=last_month, day=1) - pd.DateOffset(months=back_step - 1)
+            bm, by = back_date.month, back_date.year
+            pred_history[-back_step + 1] = current_df['Item_Name'].apply(
+                lambda name: lag_12_lookup.get((name, by, bm), 0.0)
+            ).values
         
-        # Track aggregate demand per item
+        # Initialize simulated stock levels for all items
+        sorted_df = self.df.sort_values(['Item_Name', 'Date'])
+        last_valid_cs_rows = sorted_df[sorted_df['Closing_Stock'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
+        last_known_cs = last_valid_cs_rows['Closing_Stock'].to_dict()
+        last_valid_ob_rows = sorted_df[sorted_df['O_B'].notna()].groupby('Item_Name').tail(1).set_index('Item_Name')
+        last_known_ob = last_valid_ob_rows['O_B'].to_dict()
+
+        stock_dict = {}
+        stock_known_set = set()
+
+        for item_name in current_df['Item_Name'].unique():
+            cs = last_known_cs.get(item_name)
+            if cs is not None and not pd.isna(cs):
+                stock_dict[item_name] = float(cs)
+                stock_known_set.add(item_name)
+            else:
+                ob = last_known_ob.get(item_name)
+                if ob is not None and not pd.isna(ob):
+                    stock_dict[item_name] = float(ob)
+                    stock_known_set.add(item_name)
+                else:
+                    stock_dict[item_name] = 0.0
+
+        # Track aggregate demand and aggregate recommended orders
         aggregate_demand = {item: 0.0 for item in current_df['Item_Name'].unique()}
-        
+        aggregate_rec_orders = {item: 0.0 for item in current_df['Item_Name'].unique()}
+        start_stock_at_window = {}
+
         # Run forecast for (pre_steps + n_months - 1)
         total_steps = pre_steps + n_months - 1
         
@@ -534,18 +634,65 @@ class DemandForecaster:
             y = forecast_date.year
             
             current_df['Month'] = m
-            current_df['Year'] = y
             current_df['Quarter'] = (m - 1) // 3 + 1
-            current_df['Time_Index'] = max_time_index + step
             
+            # Dynamic lookup for Lag_12 (exactly 12 months ago — always actual data)
+            current_df['Lag_12'] = current_df['Item_Name'].apply(
+                lambda name: lag_12_lookup.get((name, y - 1, m), 0.0)
+            )
+
+            # Dynamic lookup for Lag_6 (6 months ago — may be actual or predicted)
+            lag6_step = step - 6
+            if lag6_step in pred_history:
+                current_df['Lag_6'] = pred_history[lag6_step]
+            else:
+                lag6_date = forecast_date - pd.DateOffset(months=6)
+                current_df['Lag_6'] = current_df['Item_Name'].apply(
+                    lambda name: lag_12_lookup.get((name, lag6_date.year, lag6_date.month), 0.0)
+                )
+
+            # Compute YoY_Growth
+            current_df['YoY_Growth'] = ((current_df['Lag_1'] - current_df['Lag_12']) / (current_df['Lag_12'].abs() + 1)).clip(-5, 5).fillna(0)
+
             X = self._encode_features(current_df)
             preds = self.model.predict(X)
             preds = np.clip(preds, 0, None)
-            
-            # If we are within the target window, add to aggregate
-            if step >= pre_steps:
-                for item, p in zip(current_df['Item_Name'], preds):
-                    aggregate_demand[item] += float(p)
+
+            # Demand cap: clamp predictions that exceed 2x their seasonal baseline
+            lag12_vals = current_df['Lag_12'].values
+            rolling_vals = current_df['Rolling_Mean_3M'].values
+            for idx in range(len(preds)):
+                seasonal_base = lag12_vals[idx]
+                if seasonal_base > 2:
+                    cap = max(seasonal_base * 2.0, rolling_vals[idx] * 1.5)
+                    if preds[idx] > cap:
+                        preds[idx] = cap
+
+            # Simulate stock levels and recommended orders month-by-month
+            for idx, item_name in enumerate(current_df['Item_Name']):
+                item_pred = preds[idx]
+                item_stock = stock_dict.get(item_name, 0.0)
+                is_known = item_name in stock_known_set
+
+                # If this is the start of the target window, record the start stock
+                if step == pre_steps:
+                    start_stock_at_window[item_name] = item_stock
+
+                if is_known:
+                    rec_order = max(0.0, item_pred - item_stock)
+                    new_stock = max(0.0, item_stock - item_pred)
+                    stock_dict[item_name] = new_stock
+                else:
+                    rec_order = item_pred
+                    stock_dict[item_name] = 0.0
+
+                # If we are within the target window, add to aggregates
+                if step >= pre_steps:
+                    aggregate_demand[item_name] += item_pred
+                    aggregate_rec_orders[item_name] += rec_order
+
+            # Store predictions for future Lag_6 lookups
+            pred_history[step] = preds.copy()
             
             # Shift lags
             current_df['Lag_3'] = current_df['Lag_2']
@@ -556,15 +703,6 @@ class DemandForecaster:
         # Prepare final results using the logic from predict_single_month for metadata
         # We reuse the "metadata" from the last step but overwrite the prediction with the aggregate
         results = []
-        sorted_df = self.df.sort_values(['Item_Name', 'Date'])
-        
-        # Get absolute last non-NaN Closing_Stock row for each item in the entire dataset
-        last_valid_cs_rows = sorted_df[sorted_df['Closing_Stock'].notna()].groupby('Item_ID').tail(1).set_index('Item_ID')
-        last_known_cs = last_valid_cs_rows['Closing_Stock'].to_dict()
-
-        # Get absolute last non-NaN O_B row for each item in the entire dataset
-        last_valid_ob_rows = sorted_df[sorted_df['O_B'].notna()].groupby('Item_ID').tail(1).set_index('Item_ID')
-        last_known_ob = last_valid_ob_rows['O_B'].to_dict()
         
         # Pre-compute maps for efficiency
         price_map = self.df.groupby('Item_Name')['R_Rate'].last().to_dict()
@@ -573,22 +711,9 @@ class DemandForecaster:
         group_map = self.df.groupby('Item_Name')['Group'].last().to_dict()
         item_id_map = self.df.groupby('Item_Name')['Item_ID'].last().to_dict()
         
-        # Create stock map by item_name
-        stock_by_name = {}
-        for item_name, item_id in item_id_map.items():
-            cs = last_known_cs.get(item_id)
-            if cs is not None and not pd.isna(cs):
-                stock_by_name[item_name] = float(cs)
-            else:
-                ob = last_known_ob.get(item_id)
-                if ob is not None and not pd.isna(ob):
-                    stock_by_name[item_name] = float(ob)
-                else:
-                    stock_by_name[item_name] = 0.0
-        
         for item_name, total_pred in aggregate_demand.items():
-            cs_val = stock_by_name.get(item_name, 0.0)
-            rec_order = max(0, int(round(total_pred - cs_val)))
+            cs_val = start_stock_at_window.get(item_name, 0.0)
+            rec_order = int(round(aggregate_rec_orders.get(item_name, 0.0)))
             results.append({
                 'item_id': str(item_id_map.get(item_name, '')),
                 'item_name': item_name,

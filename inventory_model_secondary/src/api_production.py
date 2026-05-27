@@ -260,12 +260,12 @@ def model_info():
     return {
         "model": "XGBoost Recursive Forecaster",
         "version": "3.0.0",
-        "features": 18,
+        "features": 14,
         "feature_names": [
             'W_Rate', 'R_Rate', 'Margin_Abs', 'Margin_Pct',
-            'Month', 'Year', 'Quarter', 'Time_Index',
-            'Lag_1', 'Lag_2', 'Lag_3', 'Rolling_Mean_3M',
-            'Group_II', 'Group_III', 'Group_IV', 'Group_V', 'Group_VI',
+            'Month', 'Quarter',
+            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_6', 'Lag_12',
+            'Rolling_Mean_3M', 'YoY_Growth',
             'Category_Liquor'
         ],
         "trained_on": f"SQLite master_training_data table ({data_period})",
@@ -604,11 +604,11 @@ def export_csv(
     
     # Define headers to match predictions data exactly
     fieldnames = [
-        'Group', 'Product Name', 'Total Sold', 'Avg Price (₹)',
-        'item_id', 'category', 'current_stock', 'purchase_price', 
+        'Group', 'Product Name', 'Predicted Demand', 'Avg Price (₹)',
+        'Item ID', 'Category', 'Current Stock', 'Purchase Price (₹)', 
         'Demand Cost (₹)', 'Predicted Demand Value (₹)', 
         'Order Qty', 'Order Cost (₹)', 'Potential Profit (₹)',
-        'trend', 'growth_rate'
+        'Trend', 'Growth Rate'
     ]
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
@@ -645,19 +645,19 @@ def export_csv(
         row = {
             'Group': p.get('group', 'II'),
             'Product Name': p.get('item_name'),
-            'Total Sold': rounded_demand,
+            'Predicted Demand': rounded_demand,
             'Avg Price (₹)': round(sales_price, 2),
-            'item_id': p.get('item_id'),
-            'category': p.get('category'),
-            'current_stock': p.get('current_stock', 0),
-            'purchase_price': round(purchase_price, 2),
+            'Item ID': p.get('item_id'),
+            'Category': p.get('category'),
+            'Current Stock': p.get('current_stock', 0),
+            'Purchase Price (₹)': round(purchase_price, 2),
             'Demand Cost (₹)': round(expected_cost, 2),
             'Predicted Demand Value (₹)': round(expected_revenue, 2),
             'Order Qty': recommended_order,
             'Order Cost (₹)': round(order_cost, 2),
             'Potential Profit (₹)': round(expected_profit, 2),
-            'trend': p.get('trend', 'stable'),
-            'growth_rate': f"{p.get('growth_rate', 0)*100:.1f}%"
+            'Trend': p.get('trend', 'stable'),
+            'Growth Rate': f"{p.get('growth_rate', 0)*100:+.1f}%" if p.get('growth_rate', 0) != 0 else "0.0%"
         }
         writer.writerow(row)
         
@@ -665,19 +665,19 @@ def export_csv(
     writer.writerow({
         'Group': 'TOTAL',
         'Product Name': 'All Products Summary',
-        'Total Sold': total_sold_sum,
+        'Predicted Demand': total_sold_sum,
         'Avg Price (₹)': '',
-        'item_id': '',
-        'category': '',
-        'current_stock': '',
-        'purchase_price': '',
+        'Item ID': '',
+        'Category': '',
+        'Current Stock': '',
+        'Purchase Price (₹)': '',
         'Demand Cost (₹)': round(total_cost_sum, 2),
         'Predicted Demand Value (₹)': round(total_revenue_sum, 2),
         'Order Qty': total_order_qty_sum,
         'Order Cost (₹)': round(total_order_cost_sum, 2),
         'Potential Profit (₹)': round(total_profit_sum, 2),
-        'trend': '',
-        'growth_rate': ''
+        'Trend': '',
+        'Growth Rate': ''
     })
     
     output.seek(0)
@@ -899,12 +899,52 @@ async def upload_data(
         import sys
         sys.path.append(str(base_dir / "scripts"))
         from clean_and_group import process_file, get_group_rename
+        import numpy as np
         
         group_rename = get_group_rename(category)
         is_liquor = category.lower() == 'liquor'
         
         # Clean the file in memory
         df, parsed_month, month_full = process_file(str(temp_file_path), group_rename, is_liquor)
+        
+        # ====== HARDENED CLEANING PIPELINE ======
+        # 1. Drop Group Total rows
+        df = df[df['S.No'] != 'Group Total'].copy()
+        
+        # 2. Drop rows with null/empty/numeric-only Item_Name
+        df = df[df['Item_Name'].notna() & (df['Item_Name'].str.strip() != '')].copy()
+        df = df[~df['Item_Name'].apply(lambda x: isinstance(x, str) and all(c.isdigit() or c in '.- ' for c in x))].copy()
+        
+        # 3. Ensure numeric columns are actually numeric
+        for col in ['W_Rate', 'R_Rate', 'Qty', 'Refund_Qty', 'Net_Qty', 'R_Amt', 'W_Amt', 'O_B', 'Closing_Stock', 'Net_Tax']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # 4. Clamp negative Net_Qty to 0
+        if 'Net_Qty' in df.columns:
+            neg_count = (df['Net_Qty'] < 0).sum()
+            if neg_count > 0:
+                df.loc[df['Net_Qty'] < 0, 'Net_Qty'] = 0
+                print(f"[UPLOAD] Clamped {neg_count} negative Net_Qty values to 0")
+        
+        # 5. Drop phantom rows (Net_Qty=0 AND Qty=0)
+        phantom_mask = (df['Net_Qty'].fillna(0) == 0) & (df['Qty'].fillna(0) == 0)
+        phantom_count = phantom_mask.sum()
+        if phantom_count > 0:
+            df = df[~phantom_mask].copy()
+            print(f"[UPLOAD] Dropped {phantom_count} phantom rows")
+        
+        # 6. Remove Profit column entirely
+        if 'Profit' in df.columns:
+            df = df.drop(columns=['Profit'])
+        
+        # 7. Keep only clean columns
+        CLEAN_COLS = ['S.No', 'Group', 'GP_Index_No', 'pluno', 'Item_Name',
+                      'W_Rate', 'R_Rate', 'Qty', 'Refund_Qty', 'Net_Qty',
+                      'R_Amt', 'W_Amt', 'O_B', 'Closing_Stock', 'Net_Tax']
+        keep_cols = [c for c in CLEAN_COLS if c in df.columns]
+        df = df[keep_cols].copy()
+        # ====== END HARDENED CLEANING ======
         
         # Delete the temporary file immediately
         if temp_file_path.exists():
@@ -921,19 +961,8 @@ async def upload_data(
             cursor.execute("DELETE FROM inventory_sales WHERE _year=? AND _month=? AND _category=?", (year, month, category))
             cursor.execute("DELETE FROM upload_log WHERE year=? AND month=? AND category=?", (year, month, category))
         
-        # Dynamically add any missing columns to prevent schema mismatch errors
-        cursor.execute("PRAGMA table_info(inventory_sales)")
-        existing_cols = [row[1] for row in cursor.fetchall()]
-        for col in df.columns:
-            if col not in existing_cols:
-                try:
-                    cursor.execute(f'ALTER TABLE inventory_sales ADD COLUMN "{col}" TEXT')
-                except Exception as e:
-                    print(f"Failed to add column {col}: {e}")
-        
         # Deduplicate identical rows before insertion
         initial_len = len(df)
-        # Drop columns that are definitely unique or metadata
         dedup_cols = [c for c in df.columns if c not in ['S.No', '_ingested_at', '_source_file']]
         df = df.drop_duplicates(subset=dedup_cols)
         if len(df) < initial_len:
@@ -1039,12 +1068,6 @@ def _run_retraining_task(triggered_by: str = "manual"):
         df_raw['Date'] = pd.to_datetime(df_raw['Year'].astype(str) + '-' + df_raw['Month'].astype(str).str.zfill(2) + '-01')
         df_raw = df_raw.sort_values('Date')
         df_raw['Quarter'] = df_raw['Date'].dt.quarter
-
-        # Time Index
-        unique_dates = sorted(df_raw['Date'].unique())
-        date_to_idx = {d: i+1 for i, d in enumerate(unique_dates)}
-        df_raw['Time_Index'] = df_raw['Date'].map(date_to_idx)
-
         # Margins
         df_raw['W_Rate'] = pd.to_numeric(df_raw['W_Rate'], errors='coerce').fillna(0)
         df_raw['R_Rate'] = pd.to_numeric(df_raw['R_Rate'], errors='coerce').fillna(0)
@@ -1063,42 +1086,48 @@ def _run_retraining_task(triggered_by: str = "manual"):
         df_raw['Item_ID'] = df_raw['GP_Index_No'].apply(clean_id_part) + "_" + df_raw['pluno'].apply(clean_id_part)
         df_raw['Category'] = df_raw['_category']
 
-        # Extract and Map Group column before aggregation
-        def extract_group_prefix(gp):
-            if pd.isna(gp): return None
-            import re
-            m = re.match(r'^([IVX]+)/', str(gp))
-            return m.group(1) if m else None
+        # Extract and Map Group column before aggregation (preserve existing Group if present)
+        has_valid_groups = False
+        if 'Group' in df_raw.columns:
+            unique_grps = [str(g).strip() for g in df_raw['Group'].dropna().unique() if str(g).strip() not in ['', 'None']]
+            if len(unique_grps) > 0:
+                has_valid_groups = True
 
-        df_raw['Extracted_Group'] = df_raw['GP_Index_No'].apply(extract_group_prefix)
-        
-        def map_group(row):
-            orig = row['Extracted_Group']
-            cat = str(row['_category']).lower()
-            if 'liquor' in cat:
-                return 'VI'
-            if not orig:
-                return 'II'
-            mapping = {
-                'I': 'I',
-                'II': 'II',
-                'III': 'III',
-                'IV': 'IV',
-                'V': 'V',
-                'VI': 'V',
-            }
-            return mapping.get(orig, 'V')
-                
-        df_raw['Group'] = df_raw.apply(map_group, axis=1)
+        if not has_valid_groups:
+            def extract_group_prefix(gp):
+                if pd.isna(gp): return None
+                import re
+                m = re.match(r'^([IVX]+)/', str(gp))
+                return m.group(1) if m else None
 
-        # Aggregation of duplicates
+            df_raw['Extracted_Group'] = df_raw['GP_Index_No'].apply(extract_group_prefix)
+            
+            def map_group(row):
+                orig = row['Extracted_Group']
+                cat = str(row['_category']).lower()
+                if 'liquor' in cat:
+                    return 'VI'
+                if not orig:
+                    return 'II'
+                mapping = {
+                    'I': 'I',
+                    'II': 'II',
+                    'III': 'III',
+                    'IV': 'IV',
+                    'V': 'V',
+                    'VI': 'V',
+                }
+                return mapping.get(orig, 'V')
+                    
+            df_raw['Group'] = df_raw.apply(map_group, axis=1)
+
+        # Aggregation of duplicates (NOTE: Profit intentionally excluded)
         agg_funcs = {
             'Net_Qty': 'sum',
             'Qty': 'sum',
             'Refund_Qty': 'sum',
             'R_Amt': 'sum',
             'W_Amt': 'sum',
-            'Profit': 'sum',
             'O_B': 'first',
             'Closing_Stock': 'last',
             'Net_Tax': 'sum',
@@ -1114,7 +1143,6 @@ def _run_retraining_task(triggered_by: str = "manual"):
             'Month': 'first',
             'Year': 'first',
             'Quarter': 'first',
-            'Time_Index': 'first'
         }
         agg_cols = {k: v for k, v in agg_funcs.items() if k in df_raw.columns}
         df_agg = df_raw.groupby(['Item_ID', 'Date'], as_index=False).agg(agg_cols)
@@ -1127,8 +1155,8 @@ def _run_retraining_task(triggered_by: str = "manual"):
         df_indexed = df_agg.set_index(['Item_ID', 'Date'])
         df_full = df_indexed.reindex(idx).reset_index()
 
-        epsilon = 1.0
-        df_full['Net_Qty'] = df_full['Net_Qty'].fillna(epsilon)
+        # Use true zero for missing months (not epsilon=1.0)
+        df_full['Net_Qty'] = df_full['Net_Qty'].fillna(0.0)
 
         # Fill metadata columns
         metadata_cols = ['GP_Index_No', 'pluno', 'Item_Name', 'Group', 'Category', 
@@ -1140,17 +1168,34 @@ def _run_retraining_task(triggered_by: str = "manual"):
         df_full['Month'] = df_full['Date'].dt.month
         df_full['Year'] = df_full['Date'].dt.year
         df_full['Quarter'] = df_full['Date'].dt.quarter
-        df_full['Time_Index'] = df_full['Date'].map(date_to_idx)
+
+        # Outlier capping: per-item, mean + 4*std
+        item_stats_oc = df_full.groupby('Item_ID')['Net_Qty'].agg(['mean', 'std']).reset_index()
+        item_stats_oc.columns = ['Item_ID', '_item_mean', '_item_std']
+        item_stats_oc['_item_std'] = item_stats_oc['_item_std'].fillna(0)
+        item_stats_oc['_cap'] = (item_stats_oc['_item_mean'] + 4 * item_stats_oc['_item_std']).clip(lower=1.0)
+        df_full = df_full.merge(item_stats_oc[['Item_ID', '_cap']], on='Item_ID', how='left')
+        capped = (df_full['Net_Qty'] > df_full['_cap']).sum()
+        if capped > 0:
+            df_full.loc[df_full['Net_Qty'] > df_full['_cap'], 'Net_Qty'] = df_full['_cap']
+            print(f"[RETRAIN] Capped {capped} outlier values")
+        df_full = df_full.drop(columns=['_cap'])
 
         # Lags and Rolling average features
         df_full = df_full.sort_values(by=['Item_ID', 'Date'])
         df_full['Lag_1'] = df_full.groupby('Item_ID')['Net_Qty'].shift(1)
         df_full['Lag_2'] = df_full.groupby('Item_ID')['Net_Qty'].shift(2)
         df_full['Lag_3'] = df_full.groupby('Item_ID')['Net_Qty'].shift(3)
+        df_full['Lag_6'] = df_full.groupby('Item_ID')['Net_Qty'].shift(6)
+        df_full['Lag_12'] = df_full.groupby('Item_ID')['Net_Qty'].shift(12)
 
         df_full['Rolling_Mean_3M'] = df_full.groupby('Item_ID')['Net_Qty'].transform(
             lambda x: x.shift(1).rolling(window=3, min_periods=1).mean()
         )
+
+        # Year-over-Year growth rate: measures genuine growth vs seasonal baseline
+        df_full['YoY_Growth'] = (df_full['Lag_1'] - df_full['Lag_12']) / (df_full['Lag_12'].abs() + 1)
+        df_full['YoY_Growth'] = df_full['YoY_Growth'].fillna(0).clip(-5, 5)
 
         df_full['Date'] = df_full['Date'].dt.strftime('%Y-%m-%d')
 
@@ -1162,22 +1207,28 @@ def _run_retraining_task(triggered_by: str = "manual"):
         # Step 3: XGBoost Training
         global_training_status.update({"progress": 70, "message": "Step 3/4: Fitting native XGBoost Demand Model..."})
         
+        # Prepare training set: drop cold-start rows (where Lag_1 is NaN) and fill remaining NaNs with 0
+        df_train = df_full.dropna(subset=['Lag_1']).copy()
+        for col in ['Lag_2', 'Lag_3', 'Lag_6', 'Lag_12', 'Rolling_Mean_3M', 'YoY_Growth']:
+            if col in df_train.columns:
+                df_train[col] = df_train[col].fillna(0)
+
         MODEL_FEATURES = [
             'W_Rate', 'R_Rate', 'Margin_Abs', 'Margin_Pct',
-            'Month', 'Year', 'Quarter', 'Time_Index',
-            'Lag_1', 'Lag_2', 'Lag_3', 'Rolling_Mean_3M',
-            'Group_II', 'Group_III', 'Group_IV', 'Group_V', 'Group_VI',
+            'Month', 'Quarter',
+            'Lag_1', 'Lag_2', 'Lag_3', 'Lag_6', 'Lag_12',
+            'Rolling_Mean_3M', 'YoY_Growth',
             'Category_Liquor'
         ]
 
         cols_to_drop = [
             'Item_ID', 'Date', 'GP_Index_No', 'pluno', 'Item_Name', 
-            'Qty', 'Refund_Qty', 'R_Amt', 'W_Amt', 'Profit', 
+            'Qty', 'Refund_Qty', 'R_Amt', 'W_Amt',
             'O_B', 'Closing_Stock', 'Net_Tax', 'Net_Qty'
         ]
 
-        y = df_full['Net_Qty']
-        X = df_full.drop(columns=cols_to_drop, errors='ignore')
+        y = df_train['Net_Qty']
+        X = df_train.drop(columns=cols_to_drop, errors='ignore')
 
         # OHE Group and Category
         X = pd.get_dummies(X, columns=['Group', 'Category'], drop_first=True)
@@ -1185,11 +1236,15 @@ def _run_retraining_task(triggered_by: str = "manual"):
 
         # Train model
         model = xgb.XGBRegressor(
-            n_estimators=300,
-            learning_rate=0.05,
-            max_depth=5,
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=7,
             subsample=0.8,
             colsample_bytree=0.8,
+            min_child_weight=5,
+            gamma=0.1,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
             objective='reg:squarederror',
             random_state=42,
             n_jobs=-1
