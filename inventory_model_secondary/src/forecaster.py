@@ -545,14 +545,14 @@ class DemandForecaster:
                 'item_name': item_name,
                 'category': row['Category'],
                 'group': row['Group'],
-                'final_prediction': round(net_qty, 1),
-                'xgb_prediction': round(net_qty, 1),
+                'final_prediction': 0,
+                'xgb_prediction': 0,
                 'prophet_prediction': None,
                 'method': 'actual_historical',
                 'price': float(row['R_Rate']) if pd.notna(row['R_Rate']) else 0,
                 'purchase_price': float(row['W_Rate']) if pd.notna(row['W_Rate']) else 0,
                 'current_stock': int(closing_stock),
-                'recommended_order': max(0, int(round(net_qty - closing_stock))),
+                'recommended_order': 0,
                 'trend': trend,
                 'growth_rate': round(growth_rate, 3),
                 'historical_sales': historical,
@@ -585,6 +585,8 @@ class DemandForecaster:
         
         # Steps to get to the START month
         pre_steps = (start_year - last_year) * 12 + (start_month - last_month)
+        
+        is_past_month = pre_steps < 1
         if pre_steps < 1: pre_steps = 1
         
         # Recursive forecast loop
@@ -728,14 +730,21 @@ class DemandForecaster:
         
         for item_name, total_pred in aggregate_demand.items():
             cs_val = start_stock_at_window.get(item_name, 0.0)
-            rec_order = int(round(aggregate_rec_orders.get(item_name, 0.0)))
+            
+            if is_past_month:
+                final_pred = 0.0
+                rec_order = 0
+            else:
+                final_pred = float(round(total_pred, 1))
+                rec_order = int(round(aggregate_rec_orders.get(item_name, 0.0)))
+                
             results.append({
                 'item_id': str(item_id_map.get(item_name, '')),
                 'item_name': item_name,
                 'category': cat_map.get(item_name, 'Unknown'),
                 'group': group_map.get(item_name, 'II'),
-                'prediction': round(total_pred, 1),
-                'final_prediction': round(total_pred, 1),
+                'prediction': final_pred,
+                'final_prediction': final_pred,
                 'price': float(price_map.get(item_name, 0)),
                 'purchase_price': float(w_price_map.get(item_name, 0)),
                 'current_stock': int(cs_val),
