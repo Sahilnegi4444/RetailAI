@@ -57,6 +57,7 @@ converted_dataset/*.db
 file_history/
 data/
 model/*.json
+client/package-lock.json
 
 # Data files
 *.xlsx
