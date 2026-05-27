@@ -303,10 +303,17 @@ class DemandForecaster:
         last_month = last_date.month
         last_year = last_date.year
 
-        # Calculate how many steps ahead we need to forecast
+        from datetime import datetime
+        now = datetime.now()
+        months_from_now = (target_year - now.year) * 12 + (target_month - now.month)
+
+        # Calculate how many steps ahead we need to forecast from the LAST DATA DATE
         steps_ahead = (target_year - last_year) * 12 + (target_month - last_month)
 
-        if steps_ahead <= 0:
+        # If the target month is in the past relative to the CURRENT REAL-WORLD DATE,
+        # or if it's in the past relative to the last available data date,
+        # we strictly return actual data from the database (no predictions for past months).
+        if months_from_now < 0 or steps_ahead <= 0:
             # Target is in the past — return actual data
             results = self._get_actual_data_for_month(target_month, target_year)
             self._prediction_cache[cache_key] = results
@@ -510,6 +517,15 @@ class DemandForecaster:
         # --- PRE-COMPUTATIONS ---
         year_totals_dict, historical_dict, last_3_dict, trend_dict = self._precompute_metrics()
         
+        # Precompute the most recent known closing stock for all items
+        latest_state = self._prepare_initial_state()
+        latest_stocks = {}
+        for _, r in latest_state.iterrows():
+            cs = float(r['Closing_Stock']) if pd.notna(r['Closing_Stock']) and float(r['Closing_Stock']) >= 0 else 0
+            if cs == 0 and pd.notna(r.get('O_B')) and float(r.get('O_B', 0)) > 0:
+                cs = float(r['O_B'])
+            latest_stocks[r['Item_Name']] = cs
+        
         results = []
         for _, row in month_df.iterrows():
             item_name = row['Item_Name']
@@ -519,10 +535,9 @@ class DemandForecaster:
             historical = historical_dict.get(item_name, {})
             last_3 = last_3_dict.get(item_name, [])
             year_totals = year_totals_dict.get(item_name, {})
-            # Use closing_stock from this month's row; fallback to O_B when missing
-            closing_stock = float(row['Closing_Stock']) if pd.notna(row['Closing_Stock']) and float(row['Closing_Stock']) >= 0 else 0
-            if closing_stock == 0 and pd.notna(row.get('O_B')) and float(row.get('O_B', 0)) > 0:
-                closing_stock = float(row['O_B'])
+            # Use the absolute most recent closing stock known in the entire dataset
+            # so the UI shows the TRUE current stock today instead of 0 from past records.
+            closing_stock = latest_stocks.get(item_name, 0)
 
 
             results.append({

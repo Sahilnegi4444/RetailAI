@@ -362,8 +362,8 @@ const BulkPrediction = () => {
     
     const diffMonths = (selectedDate.getFullYear() - today.getFullYear()) * 12 + (selectedDate.getMonth() - today.getMonth());
     
-    if (diffMonths > 10) {
-      alert("only 10 monehts of prediction can be predicted.");
+    if (diffMonths > 12) {
+      alert("Only 12 months of prediction can be made.");
       return;
     }
     
@@ -731,13 +731,13 @@ const BulkPrediction = () => {
                   id="months-count"
                   type="number"
                   min="1"
-                  max="10"
+                  max="12"
                   value={state.selectedMonths}
                   onChange={(e) => {
                     const val = parseInt(e.target.value) || 1;
-                    if (val > 10) {
-                      alert("only 10 monehts of prediction can be predicted.");
-                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 10 });
+                    if (val > 12) {
+                      alert("Only 12 months of prediction can be made.");
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 12 });
                     } else {
                       dispatch({ type: 'SET_SELECTED_MONTHS', payload: Math.max(1, val) });
                     }
@@ -749,9 +749,9 @@ const BulkPrediction = () => {
                   className="spinner-btn"
                   onClick={() => {
                     const nextVal = state.selectedMonths + 1;
-                    if (nextVal > 10) {
-                      alert("only 10 monehts of prediction can be predicted.");
-                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 10 });
+                    if (nextVal > 12) {
+                      alert("Only 12 months of prediction can be made.");
+                      dispatch({ type: 'SET_SELECTED_MONTHS', payload: 12 });
                     } else {
                       dispatch({ type: 'SET_SELECTED_MONTHS', payload: nextVal });
                     }
