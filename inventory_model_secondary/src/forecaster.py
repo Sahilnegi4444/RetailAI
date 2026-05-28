@@ -63,6 +63,15 @@ class DemandForecaster:
         self.df['Date'] = pd.to_datetime(self.df['Date'])
         # Filter out corrupted numeric-only item names from the dataset
         self.df = self.df[~self.df['Item_Name'].apply(lambda x: isinstance(x, str) and all(c.isdigit() or c in '.- ' for c in x))]
+        
+        # Defensively clamp any negative Closing_Stock, O_B, and Net_Qty to 0.0
+        if 'Closing_Stock' in self.df.columns:
+            self.df['Closing_Stock'] = self.df['Closing_Stock'].apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0)
+        if 'O_B' in self.df.columns:
+            self.df['O_B'] = self.df['O_B'].apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0)
+        if 'Net_Qty' in self.df.columns:
+            self.df['Net_Qty'] = self.df['Net_Qty'].apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0)
+
         self.df = self.df.sort_values(by=['Date', 'Item_ID']).reset_index(drop=True)
         print(f"[FORECASTER] Loaded {len(self.df)} records for {self.df['Item_Name'].nunique()} unique valid items.")
 
@@ -465,8 +474,9 @@ class DemandForecaster:
             actual_current_stock = last_known_cs.get(item_name)
             if actual_current_stock is None or pd.isna(actual_current_stock):
                 actual_current_stock = last_known_ob.get(item_name, 0.0)
-            if pd.isna(actual_current_stock):
+            if pd.isna(actual_current_stock) or float(actual_current_stock) < 0:
                 actual_current_stock = 0.0
+            actual_current_stock = max(0.0, float(actual_current_stock))
 
             stock_known = item_name in stock_known_set
             prediction = float(preds[i])

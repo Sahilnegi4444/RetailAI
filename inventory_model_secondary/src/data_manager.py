@@ -321,12 +321,12 @@ class DataManager:
                 records.append({
                     'date': str(row['date']),
                     'item_name': row['item_name'],
-                    'net_qty': float(row['net_qty']) if pd.notna(row['net_qty']) else 0,
+                    'net_qty': max(0.0, float(row['net_qty'])) if pd.notna(row['net_qty']) else 0.0,
                     'w_rate': float(row['w_rate']) if pd.notna(row['w_rate']) else 0,
                     'r_rate': float(row['r_rate']) if pd.notna(row['r_rate']) else 0,
-                    'closing_stock': float(row['closing_stock']) if pd.notna(row.get('closing_stock')) else 0,
+                    'closing_stock': max(0.0, float(row['closing_stock'])) if pd.notna(row.get('closing_stock')) else 0.0,
                     'category': row.get('category', 'Unknown'),
-                    'quantity_sold': float(row['net_qty']) if pd.notna(row['net_qty']) else 0,
+                    'quantity_sold': max(0.0, float(row['net_qty'])) if pd.notna(row['net_qty']) else 0.0,
                 })
             return records
         except Exception as e:

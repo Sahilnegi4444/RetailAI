@@ -842,7 +842,7 @@ async def upload_data(
         conn.close()
         return {
             "status": "conflict",
-            "message": "This file has been stored in the database already, are you sure about this?"
+            "message": "This file has already been uploaded. Are you sure about uploading the same data again?"
         }
 
     # 2. Save temporary file for in-memory cleaning
@@ -884,6 +884,18 @@ async def upload_data(
             if neg_count > 0:
                 df.loc[df['Net_Qty'] < 0, 'Net_Qty'] = 0
                 print(f"[UPLOAD] Clamped {neg_count} negative Net_Qty values to 0")
+        
+        # 4.1 Clamp negative Closing_Stock and O_B to 0
+        if 'Closing_Stock' in df.columns:
+            neg_cs_count = (df['Closing_Stock'] < 0).sum()
+            if neg_cs_count > 0:
+                df.loc[df['Closing_Stock'] < 0, 'Closing_Stock'] = 0
+                print(f"[UPLOAD] Clamped {neg_cs_count} negative Closing_Stock values to 0")
+        if 'O_B' in df.columns:
+            neg_ob_count = (df['O_B'] < 0).sum()
+            if neg_ob_count > 0:
+                df.loc[df['O_B'] < 0, 'O_B'] = 0
+                print(f"[UPLOAD] Clamped {neg_ob_count} negative O_B values to 0")
         
         # 5. Drop phantom rows (Net_Qty=0 AND Qty=0)
         phantom_mask = (df['Net_Qty'].fillna(0) == 0) & (df['Qty'].fillna(0) == 0)
@@ -998,6 +1010,14 @@ def _run_retraining_task(triggered_by: str = "manual"):
         global_training_status.update({"progress": 15, "message": "Step 1/4: Loading clean data from SQLite inventory_sales..."})
         conn = sqlite3.connect(str(db_path))
         df_raw = pd.read_sql_query("SELECT * FROM inventory_sales", conn)
+        
+        # Defensively clamp negative stocks and demand in df_raw
+        if 'Closing_Stock' in df_raw.columns:
+            df_raw['Closing_Stock'] = df_raw['Closing_Stock'].apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0)
+        if 'O_B' in df_raw.columns:
+            df_raw['O_B'] = df_raw['O_B'].apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0)
+        if 'Net_Qty' in df_raw.columns:
+            df_raw['Net_Qty'] = df_raw['Net_Qty'].apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0)
         
         if len(df_raw) == 0:
             raise ValueError("No sales records found in inventory_sales table to train on.")
