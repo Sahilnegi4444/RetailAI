@@ -736,7 +736,11 @@ class DemandForecaster:
                 rec_order = 0
             else:
                 final_pred = float(round(total_pred, 1))
-                rec_order = int(round(aggregate_rec_orders.get(item_name, 0.0)))
+                # Enforce simple bulk order math to prevent rounding mismatches in the UI
+                # Order Qty = max(0, Total Demand - Starting Stock)
+                display_demand = round(final_pred)
+                display_stock = int(cs_val)
+                rec_order = max(0, display_demand - display_stock)
                 
             results.append({
                 'item_id': str(item_id_map.get(item_name, '')),

@@ -6,6 +6,7 @@ const Sidebar = ({ activeView, setActiveView }) => {
     { id: "bulk", icon: "📈", label: "Predictions", category: "Core" },
     { id: "analytics", icon: "📉", label: "Analytics", category: "Core" },
     { id: "budget", icon: "💰", label: "Budget Planner", category: "Core" },
+    { id: "bulkorderforecast", icon: "⚡", label: "Bulk Order", category: "Core" },
     { id: "upload", icon: "📤", label: "Upload Data", category: "Data" },
   ];
 
@@ -17,9 +18,9 @@ const Sidebar = ({ activeView, setActiveView }) => {
       <div className="sidebar-header">
         <div className="logo">
           <span className="logo-icon">🎯</span>
-          <span className="logo-text">RetailAI</span>
+          <span className="logo-text">Retail AI</span>
         </div>
-        <div className="logo-subtitle">Analytics + ML</div>
+        <div className="logo-subtitle">Analytics + ML Prediction</div>
       </div>
 
       <nav className="sidebar-nav">

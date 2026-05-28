@@ -11,7 +11,7 @@ import {
   calculateSummary,
   allocateBudget,
 } from '../../utils/predictionHelpers';
-import './BulkPrediction.css';
+import './BulkOrderForecast.css';
 
 const getApiBase = () => {
   const devPorts = ['5173', '5174', '3000'];
@@ -161,7 +161,7 @@ const reducer = (state, action) => {
   }
 };
 
-const BulkPrediction = ({ defaultBulkMode = false }) => {
+const BulkOrderForecast = ({ defaultBulkMode = true }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const observerTarget = React.useRef(null);
   const requestLockRef = React.useRef(false);
@@ -176,11 +176,10 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
     return unsub;
   }, []);
 
+  // Prevent modal from automatically opening
   useEffect(() => {
-    if (defaultBulkMode) {
-      dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showFutureAggregateModal', value: true } });
-    }
-  }, [defaultBulkMode]);
+    // Modal is only opened manually via button click
+  }, []);
 
 
   // Fetch predictions with pagination
@@ -560,10 +559,10 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
       'Predicted Demand Value (₹)',
       'Order Qty',
       'Order Cost (₹)',
-      'Potential Profit (₹)',
-      'Trend'
+      'Potential Profit (₹)'
     ];
     if (!isBulkOrder) {
+      headers.push('Trend');
       headers.push('Growth Rate');
     }
     rows.push(headers);
@@ -583,7 +582,13 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
       const expectedCost = demand * purchasePrice;
       const expectedProfit = expectedRevenue - expectedCost;
 
-      const recommendedOrder = pred.recommended_order || 0;
+      // Use exact max logic to prevent any possible mismatch with the UI
+      let recommendedOrder = pred.recommended_order || 0;
+      if (isBulkOrder) {
+          const displayStock = pred.current_stock || 0;
+          recommendedOrder = Math.max(0, demand - displayStock);
+      }
+      
       const orderCostValue = recommendedOrder * purchasePrice;
 
       totalSoldSum += demand;
@@ -606,10 +611,10 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
         expectedRevenue.toFixed(2),
         recommendedOrder,
         orderCostValue.toFixed(2),
-        expectedProfit.toFixed(2),
-        pred.trend || 'stable'
+        expectedProfit.toFixed(2)
       ];
       if (!isBulkOrder) {
+        row.push(pred.trend || 'stable');
         row.push(`${((pred.growth_rate || 0) * 100).toFixed(1)}%`);
       }
       rows.push(row);
@@ -664,9 +669,9 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
     <div className="bulk-prediction-page">
       <div className="page-header">
         <div>
-          <h1>📊 Predictions</h1>
+          <h1>🚀 Bulk Order Forecast</h1>
           <p className="page-subtitle">
-            AI-powered demand forecasting with historical pattern analysis
+            Generate aggregate demand for multiple future months to streamline bulk procurement
           </p>
         </div>
         <button onClick={handleRefresh} className="refresh-btn" disabled={state.loading}>
@@ -684,7 +689,7 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
         </div>
       )}
 
-      {summary && <SummaryCards summary={summary} loading={state.loading} />}
+      {false && summary && <SummaryCards summary={summary} loading={state.loading} />}
 
       <FiltersBar
         filters={state.filters}
@@ -697,11 +702,11 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
         budget={state.budget}
         onBudgetChange={handleBudgetChange}
         budgetSummary={budgetFilteredProducts.summary}
+        isBulkOrderForecast={true}
       />
 
       {/* Prediction Buttons */}
-      {/* Hiding the previous implementation per user request */}
-      {false && !state.predictionMode && (
+      {!state.predictionMode && (
         <div className="prediction-actions">
           <button
             className="prediction-btn aggregate-btn"
@@ -715,7 +720,7 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
             onClick={() => dispatch({ type: 'TOGGLE_MODAL', payload: { key: 'showFutureAggregateModal', value: true } })}
             disabled={state.predictions.length === 0}
           >
-            🚀 Bulk Order Forecast (Next {state.selectedMonths} Months)
+            🚀 Bulk Order Forecast (Custom Months)
           </button>
         </div>
       )}
@@ -830,7 +835,14 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
                   const demand = Math.round(pred.final_prediction || pred.prediction || 0);
                   const salesPrice = pred.price || 0;
                   const purchasePrice = pred.purchase_price || 0;
-                  const orderCost = demand * purchasePrice;
+                  
+                  let recommendedOrder = pred.recommended_order || 0;
+                  if (state.predictionMode === 'bulk_order') {
+                    const displayStock = pred.current_stock || 0;
+                    recommendedOrder = Math.max(0, demand - displayStock);
+                  }
+                  
+                  const orderCost = recommendedOrder * purchasePrice;
                   const expectedRevenue = demand * salesPrice;
                   const expectedProfit = expectedRevenue - orderCost;
                   const profitMargin = purchasePrice > 0 ? ((salesPrice - purchasePrice) / purchasePrice) * 100 : 0;
@@ -850,7 +862,7 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
                         <td className="prediction-cell" style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{demand.toLocaleString('en-IN')} units</td>
                         <td>₹{salesPrice.toFixed(2)}</td>
                         <td style={{ fontWeight: 'bold', color: '#10b981' }}>₹{Math.round(orderCost).toLocaleString('en-IN')}</td>
-                        <td>{(pred.recommended_order || demand).toLocaleString('en-IN')}</td>
+                        <td>{recommendedOrder.toLocaleString('en-IN')}</td>
                       </tr>
                       {state.expandedResultId === pred.item_name && (
                         <tr className="expanded-row">
@@ -924,8 +936,8 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
         </div>
       )}
 
-      {/* Data Table View */}
-      {!state.predictionMode && (
+      {/* Data Table View - Hidden on this board */}
+      {false && !state.predictionMode && (
         <>
           {state.loading && state.currentPage === 1 ? (
             <div className="loading-container">
@@ -968,9 +980,10 @@ const BulkPrediction = ({ defaultBulkMode = false }) => {
             </>
           )}
         </>
+
       )}
     </div>
   );
 };
 
-export default BulkPrediction;
+export default BulkOrderForecast;

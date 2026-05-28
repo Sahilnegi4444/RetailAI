@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import BulkPrediction from "./pages/BulkPrediction/BulkPrediction";
+import BulkOrderForecast from "./pages/BulkOrderForecast/BulkOrderForecast";
 import Analytics from "./pages/Analytics";
 import BudgetAllocator from "./pages/BudgetAllocator";
 import DataUpload from "./pages/DataUpload";
@@ -63,6 +64,7 @@ function App() {
         {activeView === "bulk" && <BulkPrediction />}
         {activeView === "analytics" && <Analytics />}
         {activeView === "budget" && <BudgetAllocator />}
+        {activeView === "bulkorderforecast" && <BulkOrderForecast />}
         {activeView === "upload" && <DataUpload />}
       </main>
     </div>

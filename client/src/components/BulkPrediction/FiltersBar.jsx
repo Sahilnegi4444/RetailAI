@@ -11,7 +11,8 @@ const FiltersBar = ({
   filteredItems,
   budget,
   onBudgetChange,
-  budgetSummary
+  budgetSummary,
+  isBulkOrderForecast = false
 }) => {
   const [budgetInput, setBudgetInput] = React.useState(budget ? (budget / 100000).toFixed(1) : '');
 
@@ -71,36 +72,40 @@ const FiltersBar = ({
           </select>
         </div>
 
-        <div className="filter-group">
-          <label htmlFor="stock-status">Stock Status</label>
-          <select
-            id="stock-status"
-            value={filters.stockStatus}
-            onChange={(e) => onFilterChange('stockStatus', e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Status</option>
-            <option value="critical">🚨 Critical</option>
-            <option value="low">⚠️ Low</option>
-            <option value="adequate">✅ Adequate</option>
-            <option value="excess">📦 Excess</option>
-          </select>
-        </div>
+        {!isBulkOrderForecast && (
+          <>
+            <div className="filter-group">
+              <label htmlFor="stock-status">Stock Status</label>
+              <select
+                id="stock-status"
+                value={filters.stockStatus}
+                onChange={(e) => onFilterChange('stockStatus', e.target.value)}
+                className="filter-select"
+              >
+                <option value="all">All Status</option>
+                <option value="critical">🚨 Critical</option>
+                <option value="low">⚠️ Low</option>
+                <option value="adequate">✅ Adequate</option>
+                <option value="excess">📦 Excess</option>
+              </select>
+            </div>
 
-        <div className="filter-group">
-          <label htmlFor="trend">Trend</label>
-          <select
-            id="trend"
-            value={filters.trend}
-            onChange={(e) => onFilterChange('trend', e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Trends</option>
-            <option value="increasing">📈 Increasing</option>
-            <option value="stable">➡️ Stable</option>
-            <option value="decreasing">📉 Decreasing</option>
-          </select>
-        </div>
+            <div className="filter-group">
+              <label htmlFor="trend">Trend</label>
+              <select
+                id="trend"
+                value={filters.trend}
+                onChange={(e) => onFilterChange('trend', e.target.value)}
+                className="filter-select"
+              >
+                <option value="all">All Trends</option>
+                <option value="increasing">📈 Increasing</option>
+                <option value="stable">➡️ Stable</option>
+                <option value="decreasing">📉 Decreasing</option>
+              </select>
+            </div>
+          </>
+        )}
 
         <div className="filter-group">
           <label htmlFor="sort">Sort By</label>
@@ -117,23 +122,27 @@ const FiltersBar = ({
           </select>
         </div>
 
-        <div className="filter-group">
-          <label>Order</label>
-          <button
-            onClick={() => onFilterChange('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="sort-order-btn"
-            title={filters.sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-          >
-            {filters.sortOrder === 'asc' ? '↑' : '↓'}
-          </button>
-        </div>
+        {!isBulkOrderForecast && (
+          <div className="filter-group">
+            <label>Order</label>
+            <button
+              onClick={() => onFilterChange('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
+              className="sort-order-btn"
+              title={filters.sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+            >
+              {filters.sortOrder === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
+        )}
 
-        <div className="filter-group">
-          <label>&nbsp;</label>
-          <button onClick={onExport} className="export-btn">
-            📥 Export All Data
-          </button>
-        </div>
+        {!isBulkOrderForecast && (
+          <div className="filter-group">
+            <label>&nbsp;</label>
+            <button onClick={onExport} className="export-btn">
+              📥 Export All Data
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="results-info">
