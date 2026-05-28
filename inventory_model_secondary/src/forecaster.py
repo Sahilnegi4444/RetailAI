@@ -476,7 +476,10 @@ class DemandForecaster:
             max_year = int(self.df["Year"].max())
             prev_year = max_year - 1
 
-            recommended_order = int(round(step_rec_orders[i]))
+            # Enforce strict logic to prevent double-rounding discrepancies between demand and order qty
+            display_demand = round(prediction)
+            display_stock = int(closing_stock)
+            recommended_order = max(0, display_demand - display_stock)
 
             results.append({
                 'item_id': str(item_id),

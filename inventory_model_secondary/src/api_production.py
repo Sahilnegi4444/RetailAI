@@ -632,7 +632,9 @@ def export_csv(
         expected_cost = rounded_demand * purchase_price
         expected_profit = expected_revenue - expected_cost
         
-        recommended_order = p.get('recommended_order', 0) or 0
+        # Enforce exact match to prevent double-rounding UI discrepancies
+        current_stock = int(p.get('current_stock', 0))
+        recommended_order = max(0, rounded_demand - current_stock)
         order_cost = recommended_order * purchase_price
         
         total_sold_sum += rounded_demand

@@ -37,7 +37,7 @@ const ProductRow = ({ product, isExpanded, onToggleExpand, predictionDate }) => 
         </td>
         <td>
           <span className={`order-badge ${orderPriority.class}`}>
-            {Math.round(product.recommended_order)}
+            {Math.max(0, Math.round(product.final_prediction) - Math.round(product.current_stock))}
           </span>
         </td>
         <td>
