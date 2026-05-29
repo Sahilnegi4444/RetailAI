@@ -33,7 +33,7 @@ const initialState = {
     stockStatus: 'all',
     trend: 'all',
     sortBy: 'priority',
-    sortOrder: 'asc',
+    sortOrder: 'desc',
     budgetStrategy: 'greedy', // greedy | by_category | by_group
   },
   // Budget filtering

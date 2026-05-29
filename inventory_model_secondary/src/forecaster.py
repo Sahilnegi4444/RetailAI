@@ -361,12 +361,12 @@ class DemandForecaster:
         for item_name in current_df['Item_Name'].unique():
             cs = last_known_cs.get(item_name)
             if cs is not None and not pd.isna(cs):
-                stock_dict[item_name] = float(cs)
+                stock_dict[item_name] = max(0.0, float(cs))
                 stock_known_set.add(item_name)
             else:
                 ob = last_known_ob.get(item_name)
                 if ob is not None and not pd.isna(ob):
-                    stock_dict[item_name] = float(ob)
+                    stock_dict[item_name] = max(0.0, float(ob))
                     stock_known_set.add(item_name)
                 else:
                     stock_dict[item_name] = 0.0
