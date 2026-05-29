@@ -232,11 +232,14 @@ const BudgetAllocator = () => {
       csv += `${g.group},"${g.label}",${g.category},${g.item_count},${g.avg_price},${g.avg_monthly_demand},${g.allocated_budget},${g.units_affordable},${g.coverage_pct},${g.weight}\n`;
     });
     
-    csv += `Group,Item ID,Product Name,Category,Predicted Demand,Avg Price (₹),Current Stock,Purchase Price (₹),Potential Revenue (₹),Potential Profit (₹),Trend,Growth Rate\n`;
+    csv += `Group,Item ID,Product Name,Category,Predicted Demand,Retail Rate (r_rate) (₹),Current Stock,Wholesale Rate (w_rate) (₹),Potential Revenue (₹),Potential Profit (₹),Profit Percent (%)\n`;
     result.groups.forEach(g => {
       const productsList = g.products || g.top_products || [];
       productsList.forEach(p => {
-        csv += `${g.group},${p.item_id || 'N/A'},"${p.name || ''}",${p.category || 'N/A'},${p.total_sold || 0},${p.avg_price || 0},${p.current_stock || 0},${p.purchase_price || 0},${p.potential_revenue || 0},${p.potential_profit || 0},${p.trend || 'stable'},${p.growth_rate || '0.0%'}\n`;
+        const cost = (p.purchase_price || 0) * (p.total_sold || 0);
+        const profit = p.potential_profit || 0;
+        const profitPercent = cost > 0 ? (profit / cost * 100).toFixed(2) : '0.00';
+        csv += `${g.group},${p.item_id || 'N/A'},"${p.name || ''}",${p.category || 'N/A'},${p.total_sold || 0},${p.avg_price || 0},${p.current_stock || 0},${p.purchase_price || 0},${p.potential_revenue || 0},${profit},${profitPercent}%\n`;
       });
     });
 

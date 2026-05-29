@@ -604,11 +604,10 @@ def export_csv(
     
     # Define headers to match predictions data exactly
     fieldnames = [
-        'Group', 'Product Name', 'Predicted Demand', 'Avg Price (₹)',
-        'Item ID', 'Category', 'Current Stock', 'Purchase Price (₹)', 
+        'Group', 'Product Name', 'Predicted Demand', 'Retail Rate (r_rate) (₹)',
+        'Item ID', 'Category', 'Current Stock', 'Wholesale Rate (w_rate) (₹)', 
         'Demand Cost (₹)', 'Predicted Demand Value (₹)', 
-        'Order Qty', 'Order Cost (₹)', 'Potential Profit (₹)',
-        'Trend', 'Growth Rate'
+        'Order Qty', 'Order Cost (₹)', 'Potential Profit (₹)', 'Profit Percent (%)'
     ]
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
@@ -632,6 +631,8 @@ def export_csv(
         expected_cost = rounded_demand * purchase_price
         expected_profit = expected_revenue - expected_cost
         
+        profit_percent = (expected_profit / expected_cost * 100) if expected_cost > 0 else 0
+        
         # Enforce exact match to prevent double-rounding UI discrepancies
         current_stock = int(p.get('current_stock', 0))
         recommended_order = max(0, rounded_demand - current_stock)
@@ -648,38 +649,38 @@ def export_csv(
             'Group': p.get('group', 'II'),
             'Product Name': p.get('item_name'),
             'Predicted Demand': rounded_demand,
-            'Avg Price (₹)': round(sales_price, 2),
+            'Retail Rate (r_rate) (₹)': round(sales_price, 2),
             'Item ID': p.get('item_id'),
             'Category': p.get('category'),
             'Current Stock': p.get('current_stock', 0),
-            'Purchase Price (₹)': round(purchase_price, 2),
+            'Wholesale Rate (w_rate) (₹)': round(purchase_price, 2),
             'Demand Cost (₹)': round(expected_cost, 2),
             'Predicted Demand Value (₹)': round(expected_revenue, 2),
             'Order Qty': recommended_order,
             'Order Cost (₹)': round(order_cost, 2),
             'Potential Profit (₹)': round(expected_profit, 2),
-            'Trend': p.get('trend', 'stable'),
-            'Growth Rate': f"{p.get('growth_rate', 0)*100:+.1f}%" if p.get('growth_rate', 0) != 0 else "0.0%"
+            'Profit Percent (%)': f"{round(profit_percent, 2)}%"
         }
         writer.writerow(row)
         
+    total_profit_percent = (total_profit_sum / total_cost_sum * 100) if total_cost_sum > 0 else 0
+    
     # Write a summary Total row at the bottom of the CSV
     writer.writerow({
         'Group': 'TOTAL',
         'Product Name': 'All Products Summary',
         'Predicted Demand': total_sold_sum,
-        'Avg Price (₹)': '',
+        'Retail Rate (r_rate) (₹)': '',
         'Item ID': '',
         'Category': '',
         'Current Stock': '',
-        'Purchase Price (₹)': '',
+        'Wholesale Rate (w_rate) (₹)': '',
         'Demand Cost (₹)': round(total_cost_sum, 2),
         'Predicted Demand Value (₹)': round(total_revenue_sum, 2),
         'Order Qty': total_order_qty_sum,
         'Order Cost (₹)': round(total_order_cost_sum, 2),
         'Potential Profit (₹)': round(total_profit_sum, 2),
-        'Trend': '',
-        'Growth Rate': ''
+        'Profit Percent (%)': f"{round(total_profit_percent, 2)}%"
     })
     
     output.seek(0)
