@@ -1975,7 +1975,9 @@ def allocate_budget(req: BudgetRequest):
         except (ValueError, TypeError):
             return 0.0
 
-    total_demand_cost = 0
+    groups = df['Group'].dropna().unique()
+    total_demand_cost_gross = 0.0
+    total_demand_cost_net = 0.0
     group_stats = {}
     
     all_predictions = forecaster.predict_single_month(target_month, req.year)
@@ -2008,38 +2010,65 @@ def allocate_budget(req: BudgetRequest):
         if np.isnan(avg_monthly_demand):
             avg_monthly_demand = 0.0
             
-        # Use per-item median price to avoid extreme outliers skewing the average
-        # (e.g., a single high R_Rate typo can ruin a whole group's weight)
+        # Use per-item median wholesale price (W_Rate) for budget allocation logic
         if len(gdf) > 0:
-            # Get the last known price per item, then take the median across items
-            per_item_price = gdf.groupby('Item_Name')['R_Rate'].last()
-            per_item_price = per_item_price[per_item_price > 0].dropna()
-            if len(per_item_price) == 0:
-                per_item_price = gdf.groupby('Item_Name')['W_Rate'].last()
-                per_item_price = per_item_price[per_item_price > 0].dropna()
-            # Cap at 99th percentile to eliminate data-entry errors before taking median
-            if len(per_item_price) > 0:
-                cap = per_item_price.quantile(0.99)
-                per_item_price = per_item_price.clip(upper=cap)
-                avg_price = float(per_item_price.median())
+            per_item_w_rate = gdf.groupby('Item_Name')['W_Rate'].last()
+            per_item_w_rate = per_item_w_rate[per_item_w_rate > 0].dropna()
+            if len(per_item_w_rate) == 0:
+                per_item_w_rate = gdf.groupby('Item_Name')['R_Rate'].last() * 0.8 # fallback 20% margin
+                per_item_w_rate = per_item_w_rate[per_item_w_rate > 0].dropna()
+            
+            if len(per_item_w_rate) > 0:
+                cap = per_item_w_rate.quantile(0.99)
+                per_item_w_rate = per_item_w_rate.clip(upper=cap)
+                avg_price = float(per_item_w_rate.median())
             else:
                 avg_price = 1.0
         else:
             avg_price = 1.0
+            
         if np.isnan(avg_price) or avg_price <= 0:
             avg_price = 1.0
-        estimated_cost = avg_monthly_demand * avg_price
-        total_demand_cost += estimated_cost
+        
+        # Calculate exactly matching product-level costs
+        estimated_cost_gross = 0.0
+        estimated_cost_net = 0.0
+        
+        for p in grp_preds_for_demand:
+            gross_demand = int(round(safe_float(p.get('final_prediction', 0))))
+            recommended_order = p.get('recommended_order')
+            if recommended_order is None:
+                stock = safe_float(p.get('current_stock', 0))
+                recommended_order = max(0, gross_demand - int(stock))
+            net_demand = int(recommended_order)
+            
+            pp = safe_float(p.get('purchase_price', 0))
+            if pp <= 0: pp = avg_price # fallback
+            
+            estimated_cost_gross += float(gross_demand) * pp
+            estimated_cost_net += float(net_demand) * pp
+            
+        if not grp_preds_for_demand:
+            estimated_cost_gross = avg_monthly_demand * avg_price
+            estimated_cost_net = estimated_cost_gross
+            
+        total_demand_cost_gross += estimated_cost_gross
+        total_demand_cost_net += estimated_cost_net
         
         prod_list = []
         grp_preds = preds_by_group.get(grp, [])
         for p in grp_preds:
             ts_raw = p.get('final_prediction', 0)
-            total_sold = int(round(safe_float(ts_raw)))
+            gross_demand = int(round(safe_float(ts_raw)))
+            current_stock = safe_float(p.get('current_stock', 0))
+            
+            recommended_order = p.get('recommended_order', 0)
+            if recommended_order is None:
+                recommended_order = max(0, gross_demand - int(current_stock))
+            net_demand = int(recommended_order)
             
             price = safe_float(p.get('price', 0))
             purchase_price = safe_float(p.get('purchase_price', 0))
-            current_stock = safe_float(p.get('current_stock', 0))
             growth_rate = safe_float(p.get('growth_rate', 0))
             
             def safe_str(v, default='Unknown'):
@@ -2049,14 +2078,20 @@ def allocate_budget(req: BudgetRequest):
 
             prod_list.append({
                 'name': safe_str(p.get('item_name'), 'Unknown'),
-                'total_sold': total_sold,
+                'total_sold': gross_demand, # legacy default
+                'gross_demand': gross_demand,
+                'net_demand': net_demand,
                 'avg_price': price,
                 'item_id': safe_str(p.get('item_id'), 'N/A'),
                 'category': safe_str(p.get('category'), category),
                 'current_stock': current_stock,
                 'purchase_price': purchase_price,
-                'potential_revenue': round(total_sold * price, 2),
-                'potential_profit': round(total_sold * (price - purchase_price), 2),
+                'potential_revenue': round(gross_demand * price, 2), # legacy default
+                'potential_profit': round(gross_demand * (price - purchase_price), 2), # legacy default
+                'gross_revenue': round(gross_demand * price, 2),
+                'gross_profit': round(gross_demand * (price - purchase_price), 2),
+                'net_revenue': round(net_demand * price, 2),
+                'net_profit': round(net_demand * (price - purchase_price), 2),
                 'trend': safe_str(p.get('trend'), 'stable'),
                 'growth_rate': f"{growth_rate*100:.1f}%"
             })
@@ -2068,21 +2103,43 @@ def allocate_budget(req: BudgetRequest):
             for _, row in all_products.iterrows():
                 tq = safe_float(row['total_qty'])
                 ap = safe_float(row['avg_price'])
+                gross_demand = round(tq)
                 prod_list.append({
                     'name': safe_str(row['Item_Name'], 'Unknown'),
-                    'total_sold': round(tq), 'avg_price': round(ap, 2),
+                    'total_sold': gross_demand, 
+                    'gross_demand': gross_demand,
+                    'net_demand': gross_demand,
+                    'avg_price': round(ap, 2),
                     'item_id': 'N/A', 'category': category, 'current_stock': 0, 'purchase_price': 0,
-                    'potential_revenue': round(tq * ap, 2), 'potential_profit': 0, 'trend': 'stable', 'growth_rate': '0.0%'
+                    'potential_revenue': round(tq * ap, 2), 
+                    'potential_profit': 0, 
+                    'gross_revenue': round(tq * ap, 2),
+                    'gross_profit': 0,
+                    'net_revenue': round(tq * ap, 2),
+                    'net_profit': 0,
+                    'trend': 'stable', 'growth_rate': '0.0%'
                 })
         
-        group_stats[grp] = {'group': grp, 'label': group_labels.get(grp, f'Group {grp}'), 'category': category, 'item_count': items_in_grp, 'avg_monthly_demand': round(avg_monthly_demand), 'avg_price': round(avg_price, 2), 'estimated_cost': round(estimated_cost, 2), 'top_products': prod_list[:5], 'products': prod_list}
+        group_stats[grp] = {'group': grp, 'label': group_labels.get(grp, f'Group {grp}'), 'category': category, 'item_count': items_in_grp, 'avg_monthly_demand': round(avg_monthly_demand), 'avg_price': round(avg_price, 2), 'estimated_cost': round(estimated_cost_gross, 2), 'estimated_cost_gross': round(estimated_cost_gross, 2), 'estimated_cost_net': round(estimated_cost_net, 2), 'top_products': prod_list[:5], 'products': prod_list}
     result_groups = []
     for grp in sorted(groups):
+        if grp not in group_stats: continue
         gs = group_stats[grp]
-        weight = gs['estimated_cost'] / total_demand_cost if total_demand_cost > 0 else 1 / len(groups)
+        weight = gs['estimated_cost'] / total_demand_cost_gross if total_demand_cost_gross > 0 else 1 / len(groups)
         allocated = round(budget * weight, 2)
         units_affordable = round(allocated / gs['avg_price']) if gs['avg_price'] > 0 else 0
         coverage_pct = round((units_affordable / gs['avg_monthly_demand']) * 100, 1) if gs['avg_monthly_demand'] > 0 else 0
         result_groups.append({**gs, 'weight': round(weight * 100, 2), 'allocated_budget': allocated, 'units_affordable': units_affordable, 'coverage_pct': min(coverage_pct, 999)})
     result_groups.sort(key=lambda x: x['allocated_budget'], reverse=True)
-    return {'budget': budget, 'month': target_month, 'month_name': month_names.get(target_month, ''), 'year': req.year, 'total_demand_cost': round(total_demand_cost, 2), 'budget_vs_demand': round((budget / total_demand_cost) * 100, 1) if total_demand_cost > 0 else 0, 'groups': result_groups, 'summary': {'total_groups': len(result_groups), 'total_items': sum(g['item_count'] for g in result_groups), 'total_units_affordable': sum(g['units_affordable'] for g in result_groups), 'avg_coverage': round(sum(g['coverage_pct'] for g in result_groups) / len(result_groups), 1) if result_groups else 0}}
+    return {
+        'budget': budget, 
+        'month': target_month, 
+        'month_name': month_names.get(target_month, ''), 
+        'year': req.year, 
+        'total_demand_cost': round(total_demand_cost_gross, 2), 
+        'total_demand_cost_gross': round(total_demand_cost_gross, 2), 
+        'total_demand_cost_net': round(total_demand_cost_net, 2), 
+        'budget_vs_demand': round((budget / total_demand_cost_gross) * 100, 1) if total_demand_cost_gross > 0 else 0, 
+        'groups': result_groups, 
+        'summary': {'total_groups': len(result_groups), 'total_items': sum(g['item_count'] for g in result_groups), 'total_units_affordable': sum(g['units_affordable'] for g in result_groups), 'avg_coverage': round(sum(g['coverage_pct'] for g in result_groups) / len(result_groups), 1) if result_groups else 0}
+    }

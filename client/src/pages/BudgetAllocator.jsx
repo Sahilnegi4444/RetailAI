@@ -34,6 +34,7 @@ const BudgetAllocator = () => {
   const [originalResult, setOriginalResult] = useState(null);
   const [error, setError] = useState(null);
   const [lockedGroups, setLockedGroups] = useState({});
+  const [strategy, setStrategy] = useState('net'); // 'net' or 'gross'
 
   const toggleLock = (idx) => {
     setLockedGroups(prev => ({
@@ -89,8 +90,8 @@ const BudgetAllocator = () => {
       });
       if (!res.ok) throw new Error("Allocation failed");
       const data = await res.json();
-      setResult(data);
       setOriginalResult(JSON.parse(JSON.stringify(data)));
+      applyStrategy(data, strategy);
     } catch (err) {
       setError("Failed to allocate budget. Ensure backend is running.");
     } finally { setLoading(false); }
@@ -101,6 +102,76 @@ const BudgetAllocator = () => {
     if (!clean) { setBudget(""); return; }
     setBudget(parseInt(clean).toLocaleString("en-IN"));
   };
+
+  const applyStrategy = (baseData, strat) => {
+    if (!baseData) return;
+    const totalDemandCost = strat === 'net' ? baseData.total_demand_cost_net : baseData.total_demand_cost_gross;
+    const totalBudget = parseFloat(baseData.budget) || 1;
+    
+    const updatedGroups = baseData.groups.map(g => {
+      const costMetric = strat === 'net' ? g.estimated_cost_net : g.estimated_cost_gross;
+      const weight = totalDemandCost > 0 ? costMetric / totalDemandCost : 1 / baseData.groups.length;
+      const allocated = totalBudget * weight;
+      const units = g.avg_price > 0 ? Math.floor(allocated / g.avg_price) : 0;
+      const coverage = g.avg_monthly_demand > 0 ? Math.min(999, Math.round((units / g.avg_monthly_demand) * 100)) : 100;
+      
+      const mappedProducts = (g.products || []).map(p => ({
+        ...p,
+        total_sold: strat === 'net' ? p.net_demand : p.gross_demand,
+        potential_revenue: strat === 'net' ? p.net_revenue : p.gross_revenue,
+        potential_profit: strat === 'net' ? p.net_profit : p.gross_profit,
+        current_stock: strat === 'net' ? p.current_stock : 0
+      }));
+      const mappedTopProducts = (g.top_products || []).map(p => ({
+        ...p,
+        total_sold: strat === 'net' ? p.net_demand : p.gross_demand,
+        potential_revenue: strat === 'net' ? p.net_revenue : p.gross_revenue,
+        potential_profit: strat === 'net' ? p.net_profit : p.gross_profit,
+        current_stock: strat === 'net' ? p.current_stock : 0
+      }));
+
+      return {
+        ...g,
+        products: mappedProducts,
+        top_products: mappedTopProducts,
+        estimated_cost: costMetric, // sync to active metric for frontend calculation
+        weight: Math.round(weight * 100),
+        allocated_budget: allocated,
+        units_affordable: units,
+        coverage_pct: coverage
+      };
+    });
+    
+    // Normalize allocated budget to ensure it matches the total budget EXACTLY
+    // (There can be small rounding errors, we add the remainder to the first group)
+    const sumAllocated = updatedGroups.reduce((sum, g) => sum + g.allocated_budget, 0);
+    const diff = totalBudget - sumAllocated;
+    if (updatedGroups.length > 0 && Math.abs(diff) > 0.01) {
+      updatedGroups[0].allocated_budget += diff;
+      updatedGroups[0].units_affordable = updatedGroups[0].avg_price > 0 ? Math.floor(updatedGroups[0].allocated_budget / updatedGroups[0].avg_price) : 0;
+    }
+    
+    const totalAffordable = updatedGroups.reduce((sum, g) => sum + g.units_affordable, 0);
+    const avgCoverage = updatedGroups.length > 0 ? updatedGroups.reduce((sum, g) => sum + g.coverage_pct, 0) / updatedGroups.length : 0;
+
+    setResult({
+      ...baseData,
+      total_demand_cost: totalDemandCost,
+      budget_vs_demand: totalDemandCost > 0 ? Math.min(100, Math.round((totalBudget / totalDemandCost) * 100)) : 100,
+      groups: updatedGroups,
+      summary: {
+        ...baseData.summary,
+        total_units_affordable: totalAffordable,
+        avg_coverage: Math.round(avgCoverage)
+      }
+    });
+  };
+
+  useEffect(() => {
+    if (originalResult) {
+      applyStrategy(JSON.parse(JSON.stringify(originalResult)), strategy);
+    }
+  }, [strategy]);
 
   const handleGroupBudgetChange = (idx, value, mode = 'amount') => {
     if (!result || lockedGroups[idx]) return;
@@ -221,7 +292,8 @@ const BudgetAllocator = () => {
 
   const resetToAI = () => {
     if (originalResult) {
-      setResult(JSON.parse(JSON.stringify(originalResult)));
+      applyStrategy(JSON.parse(JSON.stringify(originalResult)), strategy);
+      setLockedGroups({});
     }
   };
 
@@ -304,6 +376,31 @@ const BudgetAllocator = () => {
             {loading ? "⏳ Allocating..." : "🚀 Allocate Budget"}
           </button>
         </div>
+        <div className="budget-strategy-row" style={{ marginTop: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <label style={{ fontSize: '0.875rem', color: '#94a3b8', fontWeight: 600 }}>STRATEGY TARGET:</label>
+          <div style={{ display: 'flex', background: '#0f172a', borderRadius: '8px', padding: '4px', gap: '4px' }}>
+            <button 
+              onClick={() => setStrategy('net')}
+              style={{
+                padding: '6px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                background: strategy === 'net' ? '#3b82f6' : 'transparent', color: strategy === 'net' ? '#fff' : '#94a3b8',
+                transition: 'all 0.2s'
+              }}
+            >
+              Net Restock (Factor in Current Stock)
+            </button>
+            <button 
+              onClick={() => setStrategy('gross')}
+              style={{
+                padding: '6px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                background: strategy === 'gross' ? '#3b82f6' : 'transparent', color: strategy === 'gross' ? '#fff' : '#94a3b8',
+                transition: 'all 0.2s'
+              }}
+            >
+              Gross Demand (Entire Market)
+            </button>
+          </div>
+        </div>
         {error && <div style={{ color: '#ef4444', marginTop: '1rem', fontSize: '.875rem' }}>❌ {error}</div>}
       </div>
 
@@ -319,7 +416,7 @@ const BudgetAllocator = () => {
             <div className="bs-card">
               <div className="bs-label">Monthly Demand Cost</div>
               <div className="bs-value">{fmt(result.total_demand_cost)}</div>
-              <div className="bs-sub">Estimated cost to meet all demand</div>
+              <div className="bs-sub">{strategy === 'net' ? 'Estimated cost to restock missing units' : 'Estimated cost to meet all demand'}</div>
             </div>
             <div className="bs-card">
               <div className="bs-label">Budget Coverage</div>
