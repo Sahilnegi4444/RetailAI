@@ -13,6 +13,8 @@ const ProductsTable = ({ products, expandedId, onToggleExpand, predictionDate })
     );
   }
 
+  const isHistorical = products.length > 0 && products[0].method === 'actual_historical';
+
   return (
     <div className="products-table-container">
       <table className="products-table">
@@ -21,10 +23,10 @@ const ProductsTable = ({ products, expandedId, onToggleExpand, predictionDate })
             <th></th>
             <th>Product/Item</th>
             <th>Category</th>
-            <th>Current Stock</th>
-            <th>Predicted Demand</th>
+            <th>{isHistorical ? "Opening Balance (O_B)" : "Current Stock"}</th>
+            <th>{isHistorical ? "Actual Demand (Net Qty)" : "Predicted Demand"}</th>
             <th>Trend</th>
-            <th>Order Quantity</th>
+            <th>{isHistorical ? "Retail Price" : "Order Quantity"}</th>
             <th>Actions</th>
           </tr>
         </thead>

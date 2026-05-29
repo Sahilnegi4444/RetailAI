@@ -543,19 +543,21 @@ class DemandForecaster:
             closing_stock = latest_stocks.get(item_name, 0)
 
 
+            ob = float(row['O_B']) if pd.notna(row.get('O_B')) else 0
+
             results.append({
                 'item_id': str(row['Item_ID']),
                 'item_name': item_name,
                 'category': row['Category'],
                 'group': row['Group'],
-                'final_prediction': 0,
-                'xgb_prediction': 0,
+                'final_prediction': net_qty,
+                'xgb_prediction': net_qty,
                 'prophet_prediction': None,
                 'method': 'actual_historical',
                 'price': float(row['R_Rate']) if pd.notna(row['R_Rate']) else 0,
                 'purchase_price': float(row['W_Rate']) if pd.notna(row['W_Rate']) else 0,
-                'current_stock': int(closing_stock),
-                'recommended_order': 0,
+                'current_stock': int(ob),
+                'recommended_order': int(net_qty),
                 'trend': trend,
                 'growth_rate': round(growth_rate, 3),
                 'historical_sales': historical,
