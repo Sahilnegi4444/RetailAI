@@ -1326,7 +1326,7 @@ def _run_retraining_task(triggered_by: str = "manual"):
         # Step 4: Reload model and data manager
         global_training_status.update({"progress": 90, "message": "Step 4/4: Reloading trained model into memory..."})
         try:
-            forecaster._load()
+            forecaster.reload_data()
             data_manager = DataManager(forecaster.df)
             print("[RETRAIN] Model hot-reloaded successfully.")
         except Exception as e:
