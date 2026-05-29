@@ -33,6 +33,14 @@ const BudgetAllocator = () => {
   const [result, setResult] = useState(null);
   const [originalResult, setOriginalResult] = useState(null);
   const [error, setError] = useState(null);
+  const [lockedGroups, setLockedGroups] = useState({});
+
+  const toggleLock = (idx) => {
+    setLockedGroups(prev => ({
+      ...prev,
+      [idx]: !prev[idx]
+    }));
+  };
 
   const validateDateChange = (newMonth, newYear) => {
     const today = new Date();
@@ -95,7 +103,7 @@ const BudgetAllocator = () => {
   };
 
   const handleGroupBudgetChange = (idx, value, mode = 'amount') => {
-    if (!result) return;
+    if (!result || lockedGroups[idx]) return;
     
     // We keep the total budget strictly fixed to the user's initial budget amount
     const totalBudget = parseFloat(originalResult.budget) || 1;
@@ -108,9 +116,19 @@ const BudgetAllocator = () => {
       newAmount = (totalBudget * percentage) / 100;
     }
     
-    // Target amount for the edited group must be capped between 0 and totalBudget
-    const targetAmount = Math.max(0, Math.min(totalBudget, newAmount));
+    // Max absorbable amount by OTHER unlocked groups
+    let maxIncreaseAbsorbable = 0;
+    result.groups.forEach((g, i) => {
+      if (i !== idx && !lockedGroups[i]) {
+        maxIncreaseAbsorbable += g.allocated_budget;
+      }
+    });
+
     const oldAmount = result.groups[idx].allocated_budget;
+    const maxAllowedAmount = oldAmount + maxIncreaseAbsorbable;
+    
+    // Target amount for the edited group must be capped between 0, totalBudget, and maxAllowedAmount
+    const targetAmount = Math.max(0, Math.min(maxAllowedAmount, Math.min(totalBudget, newAmount)));
     const delta = targetAmount - oldAmount;
     
     if (delta === 0) return;
@@ -119,9 +137,9 @@ const BudgetAllocator = () => {
     let newAllocations = result.groups.map(g => g.allocated_budget);
     newAllocations[idx] = targetAmount;
     
-    // Proportional water-filling reallocation of -delta among all other groups
+    // Proportional water-filling reallocation of -delta among all other unlocked groups
     let remainingDelta = -delta;
-    let activeIndices = Array.from({ length: n }, (_, i) => i).filter(i => i !== idx);
+    let activeIndices = Array.from({ length: n }, (_, i) => i).filter(i => i !== idx && !lockedGroups[i]);
     
     while (Math.abs(remainingDelta) > 0.01 && activeIndices.length > 0) {
       const totalActiveDemand = activeIndices.reduce((sum, i) => sum + (result.groups[i].estimated_cost || 1), 0);
@@ -373,7 +391,20 @@ const BudgetAllocator = () => {
               <div key={g.group} className="group-card">
                 <div className="gc-header">
                   <div className="gc-title">{g.label}</div>
-                  <span className={`gc-badge ${g.category === 'Liquor' ? 'liquor' : 'grocery'}`}>{g.category}</span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                      onClick={() => toggleLock(idx)}
+                      style={{ 
+                        background: lockedGroups[idx] ? '#3b82f6' : 'rgba(51, 65, 85, 0.5)', 
+                        border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '2px 6px', fontSize: '12px', color: '#fff',
+                        transition: 'background 0.2s'
+                      }}
+                      title={lockedGroups[idx] ? "Unlock group" : "Lock group"}
+                    >
+                      {lockedGroups[idx] ? '🔒' : '🔓'}
+                    </button>
+                    <span className={`gc-badge ${g.category === 'Liquor' ? 'liquor' : 'grocery'}`}>{g.category}</span>
+                  </div>
                 </div>
                 <div className="gc-amount" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', borderBottom: '1px solid #334155', paddingBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '1rem' }}>
@@ -383,9 +414,10 @@ const BudgetAllocator = () => {
                         <span style={{ color: '#94a3b8', marginRight: '4px' }}>₹</span>
                         <input 
                           type="number" 
-                          value={Math.round(g.allocated_budget)}
+                          value={Math.round(g.allocated_budget) === 0 ? "" : Math.round(g.allocated_budget)}
                           onChange={(e) => handleGroupBudgetChange(idx, e.target.value, 'amount')}
-                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.25rem', fontWeight: 'bold', width: '100%', outline: 'none' }}
+                          disabled={lockedGroups[idx]}
+                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.25rem', fontWeight: 'bold', width: '100%', outline: 'none', opacity: lockedGroups[idx] ? 0.5 : 1 }}
                         />
                       </div>
                     </div>
@@ -394,9 +426,10 @@ const BudgetAllocator = () => {
                       <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid #3b82f6', padding: '6px 10px', borderRadius: '8px' }}>
                         <input 
                           type="number" 
-                          value={g.weight}
+                          value={g.weight === 0 ? "" : g.weight}
                           onChange={(e) => handleGroupBudgetChange(idx, e.target.value, 'percentage')}
-                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.1rem', fontWeight: '900', width: '100%', outline: 'none', textAlign: 'right' }}
+                          disabled={lockedGroups[idx]}
+                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.1rem', fontWeight: '900', width: '100%', outline: 'none', textAlign: 'right', opacity: lockedGroups[idx] ? 0.5 : 1 }}
                         />
                         <span style={{ color: '#3b82f6', marginLeft: '6px', fontSize: '1.1rem', fontWeight: 'bold' }}>%</span>
                       </div>
@@ -406,11 +439,12 @@ const BudgetAllocator = () => {
                   <input 
                     type="range"
                     min="0"
-                    max={result.total_demand_cost || 10000000}
+                    max={originalResult?.budget || 10000000}
                     step="10000"
                     value={Math.round(g.allocated_budget)}
                     onChange={(e) => handleGroupBudgetChange(idx, e.target.value, 'amount')}
-                    style={{ width: '100%', cursor: 'pointer', accentColor: '#3b82f6' }}
+                    disabled={lockedGroups[idx]}
+                    style={{ width: '100%', cursor: lockedGroups[idx] ? 'not-allowed' : 'pointer', accentColor: '#3b82f6', opacity: lockedGroups[idx] ? 0.5 : 1 }}
                   />
                   
                   <div style={{ fontSize: '0.7rem', color: '#64748b', display: 'flex', justifyContent: 'space-between', marginTop: '-0.25rem' }}>
