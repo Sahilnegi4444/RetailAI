@@ -996,6 +996,70 @@ async def upload_data(
         "retraining": "not_started",
     }
 
+@app.delete("/monthly-data")
+def delete_monthly_data(year: str, month: str):
+    import sqlite3
+    from pathlib import Path
+    
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    db_path = base_dir / "converted_dataset" / "inventory_sales.db"
+    
+    # Map month numbers to names and vice-versa to ensure we catch all representations
+    month_names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    
+    month_str = month
+    month_num = month
+    
+    try:
+        idx = int(month)
+        if 1 <= idx <= 12:
+            month_str = month_names[idx - 1]
+    except ValueError:
+        for i, name in enumerate(month_names):
+            if name.lower() == month.lower():
+                month_num = str(i + 1)
+                month_str = name
+                break
+                
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        
+        # Delete from inventory_sales
+        cursor.execute('''
+            DELETE FROM inventory_sales 
+            WHERE (CAST(_year AS TEXT) = ? OR CAST(_year AS INTEGER) = ?) 
+            AND (_month = ? OR _month = ?)
+        ''', (str(year), int(year), month_str, month_num))
+        
+        deleted_sales = cursor.rowcount
+        
+        # Delete from upload_log
+        cursor.execute('''
+            DELETE FROM upload_log 
+            WHERE (year = ? OR CAST(year AS INTEGER) = ?) 
+            AND (month = ? OR month = ?)
+        ''', (str(year), int(year), month_str, month_num))
+        
+        deleted_logs = cursor.rowcount
+        
+        conn.commit()
+        
+        return {
+            "status": "success",
+            "message": f"Successfully removed {deleted_sales} sales records for {month_str} {year}.",
+            "deleted_records": deleted_sales,
+            "deleted_logs": deleted_logs
+        }
+    except Exception as e:
+        print(f"[DELETE] Error: {str(e)}")
+        if 'conn' in locals() and conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
 
 
 # Global training status

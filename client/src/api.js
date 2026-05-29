@@ -408,6 +408,16 @@ export const uploadData = async (file) => {
   }
 };
 
+export const deleteMonthlyData = async (year, month) => {
+  try {
+    const res = await apiClient.delete(`/monthly-data?year=${year}&month=${month}`);
+    return res.data;
+  } catch (error) {
+    console.error("Error deleting monthly data:", error);
+    throw error;
+  }
+};
+
 export const trainModel = async () => {
   try {
     // Use Production API retrain endpoint

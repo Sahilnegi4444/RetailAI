@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getDataFormat, uploadMonthlyData, retrainModel, checkHealth, getDataPreview, getTrainingStatus, reloadForecaster } from "../api";
+import { getDataFormat, uploadMonthlyData, deleteMonthlyData, retrainModel, checkHealth, getDataPreview, getTrainingStatus, reloadForecaster } from "../api";
 import { modelEvents } from "../services/modelEvents";
 import LoadingSpinner from "../components/LoadingSpinner";
 import "./DataUpload.css";
@@ -18,6 +18,8 @@ const DataUpload = () => {
   const [loadingDbStats, setLoadingDbStats] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [reloadResult, setReloadResult] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteResult, setDeleteResult] = useState(null);
 
   // Form fields
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -40,6 +42,8 @@ const DataUpload = () => {
           // Detect transition to "completed" and notify all pages
           if (data.status === "completed" && prevStatus.current === "training") {
             modelEvents.notifyModelRetrained();
+            setRetrainResult({ status: "success", message: "Retraining pipeline finished successfully!" });
+            setRetraining(false);
           }
           prevStatus.current = data.status;
           setTrainingStatusData(data);
@@ -165,6 +169,29 @@ const DataUpload = () => {
       setUploadResult({ error: errorMessage });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to permanently delete all data for ${monthNames[selectedMonth - 1]} ${selectedYear}? This action cannot be undone.`)) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteResult(null);
+
+    try {
+      const result = await deleteMonthlyData(selectedYear, selectedMonth);
+      setDeleteResult({
+        success: result.status === "success",
+        message: result.message
+      });
+    } catch (error) {
+      console.error("Delete error details:", error);
+      const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || "Failed to delete data";
+      setDeleteResult({ success: false, error: errorMessage });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -548,6 +575,87 @@ const DataUpload = () => {
           </div>
         </div>
 
+        {/* Remove Monthly Data Section */}
+        <div className="upload-card delete-card" style={{ marginTop: '20px', border: '1px solid #f44336' }}>
+          <h2>🗑️ Remove Monthly Data</h2>
+          <p className="card-description" style={{ color: '#ff8a80' }}>
+            Permanently delete all data (Grocery and Liquor) for a specific month from the database.
+            <br/><strong>Note:</strong> You must click <strong>Retrain Model</strong> afterward to update the AI's predictions.
+          </p>
+
+          <div className="upload-form">
+            <div className="form-row">
+              <div className="form-group">
+                <label>Year</label>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                  className="form-input"
+                  style={{ borderColor: '#f44336' }}
+                >
+                  <option value={2024}>2024</option>
+                  <option value={2025}>2025</option>
+                  <option value={2026}>2026</option>
+                  <option value={2027}>2027</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Month</label>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                  className="form-input"
+                  style={{ borderColor: '#f44336' }}
+                >
+                  {monthNames.map((month, idx) => (
+                    <option key={idx} value={idx + 1}>
+                      {month}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '15px' }}>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="btn-primary"
+                style={{ backgroundColor: '#d32f2f', border: 'none' }}
+              >
+                {deleting ? "Deleting..." : "🗑️ Delete Data for this Month"}
+              </button>
+            </div>
+
+            {deleteResult && (
+              <div
+                className={`result-box ${
+                  deleteResult.success ? "success" : "error"
+                }`}
+                style={{ marginTop: '15px' }}
+              >
+                {deleteResult.success ? (
+                  <>
+                    <h3>✅ Data Deleted Successfully</h3>
+                    <div className="result-details">
+                      <p className="success-message">{deleteResult.message}</p>
+                      <p className="note-message" style={{marginTop: '8px', fontSize: '13px', color: '#64b5f6'}}>
+                        ⚠️ Please click <strong>Retrain Model</strong> on the right to apply this deletion to the AI model.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h3>❌ Deletion Failed</h3>
+                    <p className="error-message">{deleteResult.error}</p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Retrain Model Section */}
         <div className="retrain-card">
           <h2>🤖 Retrain Model with Latest Data</h2>
@@ -580,38 +688,34 @@ const DataUpload = () => {
 
           <button
             onClick={handleRetrain}
-            disabled={retraining || trainingStatusData.status === "training"}
+            disabled={retraining}
             className="btn-primary btn-large"
           >
-            {retraining || trainingStatusData.status === "training"
-              ? "⏳ Training in Progress..."
-              : "🔄 Retrain Model with Latest Data"}
+            {retraining ? (
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+                <LoadingSpinner size="small" /> Retraining...
+              </span>
+            ) : "🔄 Retrain Model with Latest Data"}
           </button>
-
-          {retraining && (
-            <div className="retrain-progress">
-              <LoadingSpinner message="Pipeline running... Check the progress bar at the top" />
-            </div>
-          )}
 
           {retrainResult && (
             <div
               className={`result-box ${
-                retrainResult.status === "success" || retrainResult.status === "info" ? "success" : "error"
+                ["success", "info", "started", "already_running"].includes(retrainResult.status) ? "success" : "error"
               }`}
             >
-              {retrainResult.status === "success" || retrainResult.status === "info" ? (
+              {["success", "info", "started", "already_running"].includes(retrainResult.status) ? (
                 <>
                   <h3>{retrainResult.status === "success" ? "✅ Model Retrained Successfully!" : "ℹ️ Retrain Info"}</h3>
                   <div className="result-details">
-                    <p className="success-message">{retrainResult.message}</p>
+                    <p className="success-message">{retrainResult.message || "Retraining process started."}</p>
                     {retrainResult.note && <p className="note-message">{retrainResult.note}</p>}
                   </div>
                 </>
               ) : (
                 <>
                   <h3>❌ Retraining Failed</h3>
-                  <p className="error-message">{retrainResult.error}</p>
+                  <p className="error-message">{retrainResult.error || "An unknown error occurred."}</p>
                 </>
               )}
             </div>
